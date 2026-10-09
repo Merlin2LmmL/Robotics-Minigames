@@ -19,6 +19,12 @@ export function setupKeyListener(dir) {
   });
 }
 
+// Rectangle covering the ghost house INCLUDING the door tile. Adjust to your map.
+export const HOUSE = { x1: 10, x2: 17, y1: 12, y2: 16 };
+export const DOOR = [13, 11];
+export const RELEASE = { red: 0, pink: 5, cyan: 30, orange: 60 };
+const inHouse = (x, y) => x >= HOUSE.x1 && x <= HOUSE.x2 && y >= HOUSE.y1 && y <= HOUSE.y2;
+
 const ORDER = ["up", "left", "down", "right"];
 const OPPOSITE = { up: "down", down: "up", left: "right", right: "left" };
 const SCATTER = {
@@ -39,13 +45,14 @@ function aheadOfPacman(p, n) {
 }
 
 function chaseTarget(color, x, y, game) {
-  const { pacman: p, blinky } = game;
+  const { pacman: p } = game;
   switch (color) {
     case "red":
       return [p.x, p.y];
     case "pink":
       return aheadOfPacman(p, 4);
     case "cyan": {
+      const blinky = game.sprites.find((s) => s.color === "red");
       const [ax, ay] = aheadOfPacman(p, 2);
       return [2 * ax - blinky.x, 2 * ay - blinky.y];
     }
@@ -58,6 +65,8 @@ export function choseDirection(s, x, y, game) {
   if (s.kind !== "ghost") return;
 
   let options = possibleDirections(x, y);
+  // Active ghosts may never step back into the house
+  options = options.filter((d) => !inHouse(x + STEP[d][0], y + STEP[d][1]));
   // No U-turn except when there is no other option
   if (options.length > 1) options = options.filter((d) => d !== OPPOSITE[s.dir]);
 
@@ -81,44 +90,11 @@ export function choseDirection(s, x, y, game) {
   return best;
 }
 
-function possibleDirections(x, y) {
+export function possibleDirections(x, y) {
   const dirs = [];
   if (!isWall(x, y - 1)) dirs.push("up");
   if (!isWall(x, y + 1)) dirs.push("down");
   if (!isWall(x - 1, y)) dirs.push("left");
   if (!isWall(x + 1, y)) dirs.push("right");
   return dirs;
-}
-
-// BFS to find the shortest path from start to target on the grid, avoiding walls
-function gridDistance(start, target, width, height) {
-  const [sx, sy] = start;
-  const [tx, ty] = target;
-
-  if (isWall(sx, sy) || isWall(tx, ty)) return -1;
-  if (sx === tx && sy === ty) return 0;
-
-  const dist = new Int32Array(width * height).fill(-1);
-  const idx = (x, y) => y * width + x;
-
-  const queue = [[sx, sy]];
-  dist[idx(sx, sy)] = 0;
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-  for (let head = 0; head < queue.length; head++) {
-    const [x, y] = queue[head];
-    const d = dist[idx(x, y)];
-
-    for (const [dx, dy] of dirs) {
-      const nx = x + dx, ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-      if (dist[idx(nx, ny)] !== -1 || isWall(nx, ny)) continue;
-
-      if (nx === tx && ny === ty) return d + 1;
-
-      dist[idx(nx, ny)] = d + 1;
-      queue.push([nx, ny]);
-    }
-  }
-  return -1;
 }
