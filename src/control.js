@@ -1,5 +1,5 @@
-import {isWall} from "./map.js";
-import {STEP} from "./main.js";
+import { isWall, isHouse } from "./map.js";
+import { STEP } from "./main.js";
 
 export function setupKeyListener(dir) {
   window.addEventListener("keydown", (event) => {
@@ -20,10 +20,7 @@ export function setupKeyListener(dir) {
 }
 
 // Rectangle covering the ghost house INCLUDING the door tile. Adjust to your map.
-export const HOUSE = { x1: 10, x2: 17, y1: 12, y2: 16 };
-export const DOOR = [13, 11];
 export const RELEASE = { red: 0, pink: 5, cyan: 30, orange: 60 };
-const inHouse = (x, y) => x >= HOUSE.x1 && x <= HOUSE.x2 && y >= HOUSE.y1 && y <= HOUSE.y2;
 
 const ORDER = ["up", "left", "down", "right"];
 const OPPOSITE = { up: "down", down: "up", left: "right", right: "left" };
@@ -66,7 +63,7 @@ export function choseDirection(s, x, y, game) {
 
   let options = possibleDirections(x, y);
   // Active ghosts may never step back into the house
-  options = options.filter((d) => !inHouse(x + STEP[d][0], y + STEP[d][1]));
+  options = options.filter((d) => !isHouse(x + STEP[d][0], y + STEP[d][1]));
   // No U-turn except when there is no other option
   if (options.length > 1) options = options.filter((d) => d !== OPPOSITE[s.dir]);
 
