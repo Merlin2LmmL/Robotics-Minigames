@@ -19,7 +19,7 @@ export function setupKeyListener(dir) {
   });
 }
 
-const ORDER = ["up", "left", "down", "right"]; // Tie-Break-Reihenfolge wie im Original
+const ORDER = ["up", "left", "down", "right"];
 const OPPOSITE = { up: "down", down: "up", left: "right", right: "left" };
 const SCATTER = {
   red: [25, -3],
@@ -34,7 +34,7 @@ function aheadOfPacman(p, n) {
   const [dx, dy] = STEP[p.dir];
   let tx = p.x + dx * n;
   const ty = p.y + dy * n;
-  if (p.dir === "up") tx -= n; // Overflow-Bug des Originals: bei "up" zusätzlich n nach links
+  if (p.dir === "up") tx -= n; // Overflow-Bug
   return [tx, ty];
 }
 
@@ -46,7 +46,6 @@ function chaseTarget(color, x, y, game) {
     case "pink":
       return aheadOfPacman(p, 4);
     case "cyan": {
-      // Pivot 2 Felder vor Pacman, Vektor Blinky->Pivot verdoppelt
       const [ax, ay] = aheadOfPacman(p, 2);
       return [2 * ax - blinky.x, 2 * ay - blinky.y];
     }
@@ -59,7 +58,7 @@ export function choseDirection(s, x, y, game) {
   if (s.kind !== "ghost") return;
 
   let options = possibleDirections(x, y);
-  // Umkehren verboten, ausser Sackgasse
+  // No U-turn except when there is no other option
   if (options.length > 1) options = options.filter((d) => d !== OPPOSITE[s.dir]);
 
   if (game.mode === "frightened") {
@@ -74,7 +73,7 @@ export function choseDirection(s, x, y, game) {
   for (const d of ORDER) {
     if (!options.includes(d)) continue;
     const dd = dist2(x + STEP[d][0], y + STEP[d][1], tx, ty);
-    if (dd < bestD) { // strikt <, damit bei Gleichstand die Reihenfolge up, left, down, right gilt
+    if (dd < bestD) { // Choose the direction that minimizes the distance to the target
       best = d;
       bestD = dd;
     }

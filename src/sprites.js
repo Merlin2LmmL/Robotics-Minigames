@@ -19,11 +19,11 @@ export function createSprite(x, y, kind, color, isStatic = false, shape = shapes
 
 export function generateSprites(ctx) {
     return [
-        createSprite(1, 1, "pacman", "yellow"),
-        createSprite(5, 5, "ghost", "red"),
-        createSprite(5, 6, "ghost", "pink"),
-        createSprite(6, 5, "ghost", "cyan"),
-        createSprite(6, 6, "ghost", "orange"),
+        createSprite(13, 23, "pacman", "yellow"),
+        createSprite(13, 11, "ghost", "red"),
+        createSprite(13, 14, "ghost", "pink"),
+        createSprite(11, 14, "ghost", "cyan"),
+        createSprite(15, 14, "ghost", "orange"),
 
         ...generateLevelSprites()
     ];
