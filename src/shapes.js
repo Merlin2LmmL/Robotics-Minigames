@@ -29,12 +29,15 @@ export const shapes = {
     ctx.fill();
   },
 
-  ghost(ctx, cx, cy, r, s = {}, t = 0, mode = s.mode ?? "normal") {
-    if (mode === "dead") {
+  ghost(ctx, cx, cy, r, s = {}, t = 0) {
+    if (s.state === "eaten") {
       // only the googly eyes, a bit bigger so they read well on their own
       drawEyes(ctx, cx, cy, r, s.dir, 1.25);
       return;
     }
+
+    const frightened = s.state === "frightened";
+    if (frightened) ctx.fillStyle = "#2121de";
 
     const bottom = cy + r, right = cx + r;
     const teeth = 3, w = (2 * r) / teeth;
@@ -49,7 +52,33 @@ export const shapes = {
     ctx.closePath();
     ctx.fill();
 
-    drawEyes(ctx, cx, cy, r, s.dir);
+    if (!frightened) {
+      drawEyes(ctx, cx, cy, r, s.dir);
+      return;
+    }
+
+    // Frightened face: two dots and a zigzag mouth
+    ctx.save();
+    ctx.fillStyle = ctx.strokeStyle = "#ffb8ae";
+    ctx.lineWidth = Math.max(1, r * 0.1);
+    ctx.lineJoin = "round";
+
+    const eyeY = cy - r * 0.2, eyeR = r * 0.13;
+    for (const dx of [-0.3, 0.3]) {
+      ctx.beginPath();
+      ctx.arc(cx + dx * r, eyeY, eyeR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const segs = 6, mouthY = cy + r * 0.35, amp = r * 0.12;
+    const x0 = cx - r * 0.6, step = (r * 1.2) / segs;
+    ctx.beginPath();
+    ctx.moveTo(x0, mouthY);
+    for (let i = 1; i <= segs; i++) {
+      ctx.lineTo(x0 + step * i, mouthY + (i % 2 ? -amp : amp));
+    }
+    ctx.stroke();
+    ctx.restore();
   },
 
   wall(ctx, cx, cy, r, s = {}) {
@@ -112,7 +141,7 @@ export const shapes = {
     ctx.fill();
   },
 
-  pellet(ctx, cx, cy, r, s = {}, t = 0) {
+  pellet(ctx, cx, cy, r, s = {}, t) {
     ctx.fillStyle = s.color ?? "#ffd9a0";
     ctx.beginPath();
     ctx.arc(cx, cy, r * (0.4 + 0.08 * Math.sin(t * Math.PI * 2)), 0, Math.PI * 2);
@@ -135,7 +164,6 @@ export const shapes = {
       ctx.fill();
     }
   },
-
   apple(ctx, cx, cy, r) {
     ctx.fillStyle = "#e0262a";
     ctx.beginPath();
