@@ -25,7 +25,7 @@ export function setupKeyListener(dir) {
 export const RELEASE = { red: 0, pink: 5, cyan: 30, orange: 60 };
 
 export const OPPOSITE = { up: "down", down: "up", left: "right", right: "left" };
-const ORDER = ["up", "left", "down", "right"];   // tie-break priority of the original
+export const ORDER = ["up", "left", "down", "right"];   // tie-break priority of the original
 
 // Corner each ghost heads for in scatter mode (classic 28x31 maze coordinates)
 const SCATTER = {
@@ -39,7 +39,7 @@ const SCATTER = {
 const NO_UP = [[12, 11], [15, 11], [12, 23], [15, 23]];
 
 // Level-1 timings in ms. The last phase lasts forever.
-const SCHEDULE = [
+const SCHEDULE_L1 = [
   { mode: "scatter", ms: 7000 },
   { mode: "chase", ms: 20000 },
   { mode: "scatter", ms: 7000 },
@@ -49,7 +49,44 @@ const SCHEDULE = [
   { mode: "scatter", ms: 5000 },
   { mode: "chase", ms: Infinity },
 ];
-const FRIGHT_MS = 6000;
+const FRIGHT_L1 = 6000;
+
+// Level-2: shorter scatter, shorter chase, shorter frightened
+const SCHEDULE_L2 = [
+  { mode: "scatter", ms: 5000 },
+  { mode: "chase", ms: 15000 },
+  { mode: "scatter", ms: 5000 },
+  { mode: "chase", ms: 15000 },
+  { mode: "scatter", ms: 3000 },
+  { mode: "chase", ms: 15000 },
+  { mode: "scatter", ms: 3000 },
+  { mode: "chase", ms: Infinity },
+];
+const FRIGHT_L2 = 4000;
+
+// Level-3: even shorter, ghosts faster in chase implicitly by schedule
+const SCHEDULE_L3 = [
+  { mode: "scatter", ms: 3000 },
+  { mode: "chase", ms: 10000 },
+  { mode: "scatter", ms: 3000 },
+  { mode: "chase", ms: 10000 },
+  { mode: "scatter", ms: 2000 },
+  { mode: "chase", ms: 10000 },
+  { mode: "scatter", ms: 2000 },
+  { mode: "chase", ms: Infinity },
+];
+const FRIGHT_L3 = 2500;
+
+function getSchedule(level) {
+  if (level >= 3) return SCHEDULE_L3;
+  if (level >= 2) return SCHEDULE_L2;
+  return SCHEDULE_L1;
+}
+function getFrightMs(level) {
+  if (level >= 3) return FRIGHT_L3;
+  if (level >= 2) return FRIGHT_L2;
+  return FRIGHT_L1;
+}
 
 // ---------- Ghost house ----------
 
@@ -75,11 +112,14 @@ export const reachedHome = (s) =>
 
 // ---------- Global ghost mode (scatter/chase schedule + frightened timer) ----------
 
-export function resetGhostMode(game) {
-  game.mode = SCHEDULE[0].mode;
+export function resetGhostMode(game, level = 1) {
+  const sched = getSchedule(level);
+  game.mode = sched[0].mode;
   game.phaseIndex = 0;
   game.phaseMs = 0;
   game.frightenedMs = 0;
+  game.schedule = sched;
+  game.level = level;
 }
 
 const reverseGhosts = (game) => {
@@ -101,12 +141,12 @@ export function updateGhostMode(game, delta) {
   if (game.sprites.some((g) => g.state === "frightened")) return;
   game.frightenedMs = 0;
 
-  const phase = SCHEDULE[game.phaseIndex];
+  const phase = game.schedule[game.phaseIndex];
   if (phase.ms === Infinity) return;
   game.phaseMs += delta;
   if (game.phaseMs >= phase.ms) {
     game.phaseMs -= phase.ms;
-    game.mode = SCHEDULE[++game.phaseIndex].mode;
+    game.mode = game.schedule[++game.phaseIndex].mode;
     reverseGhosts(game);   // ghosts turn around whenever scatter <-> chase switches
   }
 }
@@ -119,7 +159,7 @@ export function frightenGhosts(game) {
       g.reverse = true;
     }
   }
-  game.frightenedMs = FRIGHT_MS;
+  game.frightenedMs = getFrightMs(game.level ?? 1);
 }
 
 // ---------- Targeting ----------

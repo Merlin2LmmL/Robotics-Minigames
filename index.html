@@ -7,46 +7,47 @@
 <style>
   body {
     margin: 0;
-    min-height: 100vh;
+    font-family: Arial, Helvetica, sans-serif;
+    background: white;
+  }
+
+  /* game on the left, controls on the right */
+  #layout {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    gap: 20px;
+    padding: 20px;
   }
 
   #stage {
     display: flex;
     flex-direction: column;
     width: 960px;
-    margin-left: 20px;
+    max-width: 62vw;
     background: white;
+    flex-shrink: 0;
+  }
+
+  /* controls below the game on small screens */
+  @media (max-width: 900px) {
+    #layout { flex-direction: column; padding: 8px; }
+    #stage { width: 100%; max-width: 100%; }
+    #side-menu { width: 100%; }
   }
 
   #toolbar {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     padding: 6px 0;
   }
 
-  canvas {
+  canvas#board {
     display: block;
     box-sizing: border-box;
     width: 100%;
     height: auto;
     border: 1px solid black;
-  }
-
-  #stage:fullscreen {
-    margin: 0;
-    width: 100vw;
-    height: 100vh;
-    padding: 0 8px;
-    box-sizing: border-box;
-  }
-
-  #stage:fullscreen canvas {
-    flex: 1 1 0;
-    min-height: 0;
-    object-fit: contain;
-    border: 0;
   }
 
   #fs-btn {
@@ -57,45 +58,999 @@
     border: 1px solid black;
     cursor: pointer;
   }
-
   #fs-btn svg { display: block; }
-
   #fs-btn .icon-minimize { display: none; }
+
+  #stage:fullscreen {
+    margin: 0;
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    padding: 0 8px;
+    box-sizing: border-box;
+  }
+  #stage:fullscreen canvas#board {
+    flex: 1 1 0;
+    min-height: 0;
+    object-fit: contain;
+    border: 0;
+  }
   #stage:fullscreen #fs-btn .icon-maximize { display: none; }
   #stage:fullscreen #fs-btn .icon-minimize { display: block; }
+
+  /* side menu */
+  #side-menu {
+    flex: 1;
+    min-width: 300px;
+  }
+
+  .card {
+    border: 1px solid black;
+    padding: 8px;
+    margin-bottom: 10px;
+  }
+
+  h2 { margin: 0 0 6px; font-size: 20px; }
+  h3 { margin: 12px 0 4px; font-size: 16px; }
+  p { margin: 0 0 8px; }
+  .hint { font-size: 13px; color: #555; }
+
+  .row { margin-bottom: 6px; }
+  .toggle { margin-left: 10px; }
+
+  .mode-panel[hidden], #thinking[hidden], #thinking-card[hidden] { display: none; }
+
+  #thinking {
+    margin-top: 8px;
+    padding: 4px;
+    border: 1px dashed gray;
+    min-height: 20px;
+  }
+
+  /* play panel */
+  .keys kbd {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    text-align: center;
+    border: 1px solid black;
+    margin: 2px;
+    background: #eee;
+  }
+
+  /* rules */
+  #rule-list { margin: 0; padding-left: 24px; }
+  .rule {
+    margin-bottom: 6px;
+    padding: 4px;
+    border: 1px solid #999;
+  }
+  .rule .priority { display: none; }
+  .rule .sentence, .rule .tools { display: inline; }
+  .rule .sentence input[type="number"] { width: 55px; }
+  .rule .kw { font-weight: bold; }
+  .rule.fallback { margin-top: 8px; background: #f4f4f4; }
+
+  /* neural network */
+  #nn-canvas, #fitness-chart {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid black;
+    margin-bottom: 6px;
+  }
+  #node-inspector {
+    border: 1px solid black;
+    padding: 6px;
+    margin-bottom: 6px;
+    max-height: 240px;
+    overflow: auto;
+  }
+  #node-inspector table { border-collapse: collapse; margin: 4px 0; }
+  #node-inspector td { padding: 2px 8px 2px 0; font-size: 14px; }
+  #node-inspector input[type="number"] { width: 75px; }
+  .check-grid label { display: block; }
+  #layer-list { list-style: none; margin: 0 0 6px; padding: 0; }
+  .layer { margin-bottom: 4px; }
+  .layer .count { display: inline-block; min-width: 24px; text-align: center; }
+  .train-grid label { display: block; margin-bottom: 6px; }
+  .stats { margin: 8px 0; }
+  .stat { display: inline-block; margin-right: 18px; }
+  .stat b { display: block; font-size: 18px; }
+  .stat span { font-size: 12px; }
+.tab-btn { background:#333; border:1px solid #555; color:#fff; padding:3px 6px; border-radius:3px; cursor:pointer; font-size:12px; }
+.tab-btn.active { background:#ffd700; color:#111; font-weight:bold; border-color:#ffd700; }
 </style>
 </head>
 <body>
-<div id="stage">
-  <div id="toolbar">
-    <button id="fs-btn" type="button" title="Fullscreen" aria-label="Fullscreen">
-      <svg class="icon-maximize" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
-      </svg>
-      <svg class="icon-minimize" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>
-      </svg>
-    </button>
+<div id="layout">
+
+  <!-- ===================== GAME (left / top on mobile) ===================== -->
+  <div id="stage">
+    <div id="toolbar">
+      <button id="fs-btn" type="button" title="Fullscreen" aria-label="Fullscreen">
+        <svg class="icon-maximize" viewBox="0 0 24 24" width="100%" height="100%" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
+        </svg>
+        <svg class="icon-minimize" viewBox="0 0 24 24" width="100%" height="100%" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>
+        </svg>
+      </button>
+    </div>
+
+    <canvas id="board" width="1400" height="1550"></canvas>
   </div>
 
-  <canvas id="board" width="1400" height="1550"></canvas>
+  <!-- ===================== CONTROLS ===================== -->
+  <aside id="side-menu">
+
+    <!-- Mode picker -->
+    <section class="card" id="mode-card">
+      <div class="row">
+        <label for="mode-select">Mode</label>
+        <select id="mode-select">
+          <option value="play" selected>Play Mode</option>
+          <option value="rules">Rules Mode</option>
+          <option value="neural-network">Neural Network Mode</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Controls (visible in every mode) -->
+    <section class="card" id="run-controls">
+      <h2>Controls</h2>
+      <div class="row">
+        <button id="btn-run" type="button">Run</button>
+        <button id="btn-pause" type="button">Pause</button>
+        <button id="btn-reset" type="button">Reset</button>
+        <button id="btn-party" type="button">Party</button>
+      </div>
+      <div class="row">
+        <label for="speed-select">Speed</label>
+        <select id="speed-select">
+          <option value="0.5">Slow motion</option>
+          <option value="1" selected>Normal</option>
+          <option value="2">Fast</option>
+          <option value="4">Very fast</option>
+        </select>
+        <label class="toggle" for="chk-step">
+          <input type="checkbox" id="chk-step">
+          Pause at each junction
+        </label>
+      </div>
+    </section>
+
+    <!-- Thinking (only shown in Rules and Neural Network mode) -->
+    <section class="card" id="thinking-card">
+      <h2>Thinking</h2>
+      <label for="chk-thinking">
+        <input type="checkbox" id="chk-thinking" checked>
+        Show thinking
+      </label>
+      <div id="thinking" aria-live="polite">Pac-Man is waiting for his first junction.</div>
+    </section>
+
+    <!-- ============ PLAY MODE ============ -->
+    <section class="card mode-panel" id="panel-play" hidden>
+      <h2>Play</h2>
+      <p>Play Pacman yoursef the old fasion way.</p>
+      <div class="keys" aria-label="Movement keys">
+        <kbd class="w">W</kbd><kbd class="a">A</kbd><kbd class="s">S</kbd><kbd class="d">D</kbd>
+      </div>
+      <p class="hint">Arrow keys work too. If you are on mobile, sorry, these buttons will do the job.</p>
+      <div class="row spread">
+        <span>Your best score</span><b id="best-human-score">0</b>
+      </div>
+    </section>
+
+    <!-- ============ RULES MODE ============ -->
+    <section class="card mode-panel" id="panel-rules" hidden>
+      <h2>Rules</h2>
+      <p>At every junction, Pac-Man checks your rules from top to bottom. The first rule that is true decides where he goes.</p>
+
+      <ol id="rule-list" aria-label="Rules, highest priority first"></ol>
+
+      <div class="rule fallback" id="rule-fallback" >
+        <span class="priority" aria-hidden="true">&#8734;</span>
+        <div class="sentence">
+          <span class="kw">Otherwise</span>
+          
+          <select id="fallback-action" data-role="action"></select>
+        </div>
+        <span></span>
+      </div>
+
+      <div id="rule-actions" class="row">
+        <button id="btn-add-rule" type="button">Add rule</button>
+        <button id="btn-load-example" type="button">Load example</button>
+        <button id="btn-clear-rules" type="button">Clear all</button>
+      </div>
+      <p class="hint" >Dont forget to order your rules in order of most to least important.</p>
+    </section>
+
+    <!-- ============ NEURAL NETWORK MODE ============ -->
+    <section class="card mode-panel" id="panel-nn">
+      <h2>Neural network</h2>
+      <p>Choose what Pac-Man can sense, then shape the layers between his senses and his decision. After that train pacmans brain.</p>
+
+      <canvas id="nn-canvas" width="640" height="300" role="img"
+              aria-label="Diagram of the neural network"></canvas>
+      <p class="hint">Click a node in the diagram (or pick it below) to see and edit its values. Blue lines are positive weights, red lines are negative.</p>
+      <div class="row"><label for="node-select">Node:</label> <select id="node-select"></select></div>
+      <div id="node-inspector"></div>
+
+      <h3>1. Inputs</h3>
+      <div class="check-grid" id="input-list"></div>
+
+      <h3>2. Hidden layers (not so hiddden i guess)</h3>
+      <ul id="layer-list"></ul>
+      <div class="row">
+        <button id="btn-add-layer" type="button">Add layer</button>
+        <span class="hint" id="layer-limit-note"></span>
+      </div>
+
+      <h3>3. Outputs</h3>
+      <p class="hint" style="margin-bottom:0">Four outputs: up, down, left, right. Pac-Man takes the highest score that isn't a wall.</p>
+
+      <h3>4. Train</h3>
+      <div class="train-grid">
+        <label for="pop-size">
+          <span>Population: <b id="pop-size-val">60</b></span>
+          <input type="range" id="pop-size" min="20" max="200" step="10" value="60">
+        </label>
+        <label for="mut-rate">
+          <span>Mutation: <b id="mut-rate-val">10</b>%</span>
+          <input type="range" id="mut-rate" min="1" max="50" step="1" value="10">
+        </label>
+      </div>
+      <div class="row">
+        <button id="btn-train" type="button">Start training</button>
+        <button id="btn-stop-train" type="button" disabled>Stop</button>
+        <button id="btn-watch-best" type="button" disabled>Watch the best</button>
+        <button id="btn-reset-brain" type="button">New random brain</button>
+      </div>
+
+      <div class="stats" aria-live="polite">
+        <div class="stat"><b id="stat-gen">0</b><span>Generation</span></div>
+        <div class="stat"><b id="stat-best">0</b><span>Best score</span></div>
+        <div class="stat"><b id="stat-avg">0</b><span>Average</span></div>
+      </div>
+
+      <canvas id="fitness-chart" width="640" height="200" role="img"
+              aria-label="Chart of score per generation"></canvas>
+    </section>
+
+    <section class="card" id="highscore-card">
+      <h2>Highscores</h2>
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;">
+        <label>Player: <input id="hs-username" value="Player" size="10"></label>
+        <label><input type="checkbox" id="hs-save-toggle"> Save highscores</label>
+        <div class="tabs" style="gap:4px;flex-wrap:wrap;">
+          <button class="tab-btn active" onclick="filterScores('all')">All</button>
+          <button class="tab-btn" onclick="filterScores('play')">Play</button>
+          <button class="tab-btn" onclick="filterScores('rules')">Rules</button>
+          <button class="tab-btn" onclick="filterScores('neural-network')">Neural</button>
+        </div>
+      </div>
+      <div id="highscore-list" style="max-height:200px;overflow-y:auto;font-size:13px;margin-top:6px;"></div>
+    </section>
+
+  </aside>
 </div>
 
+<!-- ===================== UI WIRING (no game logic here) =====================
+     Everything below only manages the controls and announces changes.
+     main.js can read state via window.PacUI and listen for "pac:*" events on document. -->
 <script>
-  const stage = document.getElementById("stage");
-  const btn = document.getElementById("fs-btn");
+(() => {
+  // ---------- Configuration  ----------
+  const SENSORS = [
+    { id: "ghostDist",      label: "Distance to nearest ghost",       kind: "number", default: 0.3 },
+    { id: "pelletDist",     label: "Distance to nearest pellet",      kind: "number", default: 0.5 },
+    { id: "powerDist",      label: "Distance to nearest power pellet", kind: "number", default: 0.5 },
+    { id: "ghostScared",    label: "Ghosts are scared",               kind: "bool" },
+    { id: "wallAhead",      label: "Wall straight ahead",             kind: "bool" },
+    { id: "ghostAhead",     label: "Ghost in this direction",         kind: "bool" },
+  ];
 
-  btn.addEventListener("click", () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else stage.requestFullscreen();
+  const ACTIONS = [
+    { id: "toPellet",   label: "Go toward nearest pellet" },
+    { id: "toPower",    label: "Go toward nearest power pellet" },
+    { id: "awayGhost",  label: "Go away from nearest ghost" },
+    { id: "toGhost",    label: "Chase nearest scared ghost" },
+    { id: "straight",   label: "Keep going straight" },
+    { id: "random",     label: "Pick a random direction" },
+  ];
+
+  const NN = {
+    maxHiddenLayers: 4,
+    maxNeuronsPerLayer: 12,
+    outputs: ["Up", "Down", "Left", "Right"],
+    inputs: [
+      { id: "ghostUp",     label: "Ghost distance: up" },
+      { id: "ghostDown",   label: "Ghost distance: down" },
+      { id: "ghostLeft",   label: "Ghost distance: left" },
+      { id: "ghostRight",  label: "Ghost distance: right" },
+      { id: "pelletUp",    label: "Pellet distance: up" },
+      { id: "pelletDown",  label: "Pellet distance: down" },
+      { id: "pelletLeft",  label: "Pellet distance: left" },
+      { id: "pelletRight", label: "Pellet distance: right" },
+      { id: "scared",      label: "Ghosts are scared" },
+      { id: "powerNear",   label: "Power pellet nearby" },
+    ],
+  };
+
+  // ---------- Helpers ----------
+  const $ = (id) => document.getElementById(id);
+  const emit = (name, detail = {}) => document.dispatchEvent(new CustomEvent("pac:" + name, { detail }));
+  const optionsHTML = (list) => list.map(o => `<option value="${o.id}">${o.label}</option>`).join("");
+
+  // ---------- Fullscreen ----------
+  const stage = $("stage"), fsBtn = $("fs-btn");
+  fsBtn.addEventListener("click", () => {
+    document.fullscreenElement ? document.exitFullscreen() : stage.requestFullscreen();
   });
   document.addEventListener("fullscreenchange", () => {
     const full = document.fullscreenElement === stage;
     const label = full ? "Exit fullscreen" : "Fullscreen";
-    btn.title = label;
-    btn.setAttribute("aria-label", label);
+    fsBtn.title = label;
+    fsBtn.setAttribute("aria-label", label);
   });
+
+  // ---------- Mode switching ----------
+  const modeSelect = $("mode-select");
+  const panels = { "play": $("panel-play"), "rules": $("panel-rules"), "neural-network": $("panel-nn") };
+
+  function applyMode() {
+    const mode = modeSelect.value;
+    window.currentMode = mode;
+    for (const [key, el] of Object.entries(panels)) el.hidden = key !== mode;
+    // The controls card is always visible. Only the thinking card is hidden in Play mode.
+    $("thinking-card").hidden = mode === "play";
+    emit("mode", { mode });
+  }
+  modeSelect.addEventListener("change", applyMode);
+
+  // ---------- Shared run controls ----------
+  $("btn-run").addEventListener("click", () => emit("run"));
+  $("btn-pause").addEventListener("click", () => emit("pause"));
+  $("btn-reset").addEventListener("click", () => emit("reset"));
+  $("btn-party").addEventListener("click", () => emit("party"));
+  $("speed-select").addEventListener("change", e => emit("speed", { speed: parseFloat(e.target.value) }));
+  $("chk-thinking").addEventListener("change", e => {
+    $("thinking").hidden = !e.target.checked;
+    emit("thinking", { enabled: e.target.checked });
+  });
+  $("chk-step").addEventListener("change", e => emit("step-mode", { enabled: e.target.checked }));
+
+  // ---------- Rules editor ----------
+  const ruleList = $("rule-list");
+  const fallbackSel = $("fallback-action");
+  fallbackSel.innerHTML = optionsHTML(ACTIONS);
+
+  function makeRule(data = {}) {
+    const li = document.createElement("li");
+    li.className = "rule";
+    li.innerHTML = `
+      <span class="priority" aria-hidden="true"></span>
+      <div class="sentence">
+        <span class="kw">If</span>
+        <select data-role="sensor" aria-label="Sensor">${optionsHTML(SENSORS)}</select>
+        <select data-role="op" aria-label="Comparison"></select>
+        <input data-role="value" type="number" min="0" max="1" step="0.05" aria-label="Value (0 to 1)">
+        <span class="kw">then</span>
+        <select data-role="action" aria-label="Action">${optionsHTML(ACTIONS)}</select>
+      </div>
+      <div class="tools">
+        <button type="button" data-act="up"   title="Move up (higher priority)"   aria-label="Move rule up">&uarr;</button>
+        <button type="button" data-act="down" title="Move down (lower priority)" aria-label="Move rule down">&darr;</button>
+        <button type="button" data-act="del"  title="Delete rule"                aria-label="Delete rule">&times;</button>
+      </div>`;
+
+    const sensorSel = li.querySelector('[data-role="sensor"]');
+    const opSel = li.querySelector('[data-role="op"]');
+    const valInput = li.querySelector('[data-role="value"]');
+    const actionSel = li.querySelector('[data-role="action"]');
+
+    function syncSensorType() {
+      const s = SENSORS.find(x => x.id === sensorSel.value);
+      if (s.kind === "bool") {
+        opSel.innerHTML = `<option value="true">is true</option><option value="false">is false</option>`;
+        valInput.hidden = true;
+      } else {
+        opSel.innerHTML = `<option value="lt">is less than</option><option value="gt">is greater than</option>`;
+        valInput.hidden = false;
+        if (valInput.value === "") valInput.value = s.default ?? 0.5;
+      }
+    }
+
+    sensorSel.value = data.sensor || SENSORS[0].id;
+    syncSensorType();
+    if (data.op) opSel.value = data.op;
+    if (data.value !== undefined) valInput.value = data.value;
+    actionSel.value = data.action || ACTIONS[0].id;
+
+    sensorSel.addEventListener("change", () => { syncSensorType(); rulesChanged(); });
+    li.addEventListener("change", rulesChanged);
+    li.addEventListener("input", rulesChanged);
+    li.addEventListener("click", (e) => {
+      const act = e.target.closest("button")?.dataset.act;
+      if (!act) return;
+      if (act === "del") li.remove();
+      if (act === "up" && li.previousElementSibling) ruleList.insertBefore(li, li.previousElementSibling);
+      if (act === "down" && li.nextElementSibling) ruleList.insertBefore(li.nextElementSibling, li);
+      rulesChanged();
+    });
+    return li;
+  }
+
+  function renumber() {
+    [...ruleList.children].forEach((li, i) => {
+      li.querySelector(".priority").textContent = i + 1;
+      li.querySelector('[data-act="up"]').disabled = i === 0;
+      li.querySelector('[data-act="down"]').disabled = i === ruleList.children.length - 1;
+    });
+  }
+
+  function getRules() {
+    return [...ruleList.children].map(li => {
+      const g = (r) => li.querySelector(`[data-role="${r}"]`);
+      const sensor = SENSORS.find(s => s.id === g("sensor").value);
+      return {
+        sensor: sensor.id,
+        kind: sensor.kind,
+        op: g("op").value,
+        value: sensor.kind === "bool" ? null : parseFloat(g("value").value),
+        action: g("action").value,
+      };
+    });
+  }
+
+  function rulesChanged() {
+    renumber();
+    emit("rules-change", { rules: getRules(), fallback: fallbackSel.value });
+  }
+
+  $("btn-add-rule").addEventListener("click", () => { ruleList.appendChild(makeRule()); rulesChanged(); });
+  $("btn-clear-rules").addEventListener("click", () => { ruleList.innerHTML = ""; rulesChanged(); });
+  fallbackSel.addEventListener("change", rulesChanged);
+
+  function loadExample() {
+    ruleList.innerHTML = "";
+    ruleList.appendChild(makeRule({ sensor: "ghostDist", op: "lt", value: 0.25, action: "awayGhost" }));
+    ruleList.appendChild(makeRule({ sensor: "ghostScared", op: "true", action: "toGhost" }));
+    fallbackSel.value = "toPellet";
+    rulesChanged();
+  }
+  $("btn-load-example").addEventListener("click", loadExample);
+
+  // ---------- Neural network editor ----------
+  const state = {
+    inputs: new Set(NN.inputs.slice(0, 6).map(i => i.id)),
+    hidden: [6, 6],
+  };
+
+  const inputList = $("input-list");
+  inputList.innerHTML = NN.inputs.map(i => `
+    <label><input type="checkbox" value="${i.id}" ${state.inputs.has(i.id) ? "checked" : ""}> ${i.label}</label>`).join("");
+  inputList.addEventListener("change", (e) => {
+    e.target.checked ? state.inputs.add(e.target.value) : state.inputs.delete(e.target.value);
+    networkChanged();
+  });
+
+  const layerList = $("layer-list");
+  function renderLayers() {
+    layerList.innerHTML = state.hidden.map((n, i) => `
+      <li class="layer" data-i="${i}">
+        <span class="name">Hidden layer ${i + 1}</span>
+        <button type="button" data-act="minus" aria-label="Fewer neurons in layer ${i + 1}">&minus;</button>
+        <span class="count" aria-live="polite">${n}</span>
+        <button type="button" data-act="plus" aria-label="More neurons in layer ${i + 1}">+</button>
+        <button type="button" data-act="remove" aria-label="Remove layer ${i + 1}">&times;</button>
+      </li>`).join("") || `<li class="hint">No hidden layers: inputs connect straight to outputs.</li>`;
+    $("btn-add-layer").disabled = state.hidden.length >= NN.maxHiddenLayers;
+    $("layer-limit-note").textContent = state.hidden.length >= NN.maxHiddenLayers
+      ? `Up to ${NN.maxHiddenLayers} layers.` : "";
+  }
+  layerList.addEventListener("click", (e) => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const i = +btn.closest(".layer").dataset.i;
+    if (btn.dataset.act === "plus")  state.hidden[i] = Math.min(NN.maxNeuronsPerLayer, state.hidden[i] + 1);
+    if (btn.dataset.act === "minus") state.hidden[i] = Math.max(1, state.hidden[i] - 1);
+    if (btn.dataset.act === "remove") state.hidden.splice(i, 1);
+    networkChanged();
+  });
+  $("btn-add-layer").addEventListener("click", () => {
+    if (state.hidden.length < NN.maxHiddenLayers) { state.hidden.push(4); networkChanged(); }
+  });
+
+  function getNetworkConfig() {
+    const inputs = NN.inputs.filter(i => state.inputs.has(i.id)).map(i => i.id);
+    return { inputs, hidden: [...state.hidden], outputs: NN.outputs.length };
+  }
+
+  // ---------- Editable network values (weights + biases) ----------
+  // weights[l][to][from] connects layer l (size sizes[l]) to layer l+1.
+  // biases[l][to] belongs to node "to" in layer l+1. Layer 0 = inputs (no values to edit).
+  let model = { weights: [], biases: [] };
+  let lastCfg = null;
+  let selected = { layer: 1, index: 0 };
+  let activations = null;
+  let training = false;
+
+  const fmt = (v) => Math.round(v * 1000) / 1000;
+  const rnd = () => Math.round((Math.random() * 2 - 1) * 100) / 100;
+  const layerSizes = (cfg) => [cfg.inputs.length, ...cfg.hidden, cfg.outputs];
+
+  function nodeLabel(cfg, layer, i) {
+    const sizes = layerSizes(cfg);
+    if (layer === 0) return NN.inputs.find(x => x.id === cfg.inputs[i]).label;
+    if (layer === sizes.length - 1) return "Output: " + NN.outputs[i];
+    return "Hidden " + layer + ", neuron " + (i + 1);
+  }
+
+  // Rebuild the model after the architecture changed, keeping values that still fit.
+  function rebuildModel() {
+    const cfg = getNetworkConfig();
+    const sizes = layerSizes(cfg);
+    const old = lastCfg;
+    const weights = [], biases = [];
+    for (let l = 0; l < sizes.length - 1; l++) {
+      const W = [], B = [];
+      for (let to = 0; to < sizes[l + 1]; to++) {
+        const row = [];
+        for (let from = 0; from < sizes[l]; from++) {
+          let oldFrom = from;
+          if (l === 0 && old) oldFrom = old.inputs.indexOf(cfg.inputs[from]); // match inputs by id
+          const oldRow = old && model.weights[l] ? model.weights[l][to] : undefined;
+          const v = oldRow ? oldRow[oldFrom] : undefined;
+          row.push(v === undefined ? rnd() : v);
+        }
+        W.push(row);
+        const b = old && model.biases[l] ? model.biases[l][to] : undefined;
+        B.push(b === undefined ? 0 : b);
+      }
+      weights.push(W);
+      biases.push(B);
+    }
+    model = { weights, biases };
+    lastCfg = cfg;
+  }
+
+  function randomizeModel() {
+    model.weights = model.weights.map(W => W.map(row => row.map(rnd)));
+    model.biases = model.biases.map(B => B.map(() => 0));
+  }
+
+  function getNetwork() {
+    return JSON.parse(JSON.stringify({ config: getNetworkConfig(), weights: model.weights, biases: model.biases }));
+  }
+
+  function emitWeights() { emit("weights-change", { network: getNetwork() }); }
+
+  // ---------- Diagram ----------
+  const nnCanvas = $("nn-canvas");
+  const PADX = 60, PADY = 24;
+
+  function nodePos(sizes, l, n) {
+    const W = nnCanvas.width, H = nnCanvas.height;
+    return {
+      x: PADX + (sizes.length === 1 ? 0 : l * (W - 2 * PADX) / (sizes.length - 1)),
+      y: sizes[l] === 1 ? H / 2 : PADY + n * (H - 2 * PADY) / (sizes[l] - 1),
+    };
+  }
+
+  function findNode(mx, my) {
+    const sizes = layerSizes(lastCfg);
+    for (let l = 0; l < sizes.length; l++)
+      for (let n = 0; n < sizes[l]; n++) {
+        const p = nodePos(sizes, l, n);
+        if (Math.hypot(p.x - mx, p.y - my) <= 14) return { layer: l, index: n };
+      }
+    return null;
+  }
+
+  function canvasCoords(e) {
+    const r = nnCanvas.getBoundingClientRect();
+    return [(e.clientX - r.left) * nnCanvas.width / r.width, (e.clientY - r.top) * nnCanvas.height / r.height];
+  }
+
+  function drawNetwork() {
+    const ctx = nnCanvas.getContext("2d");
+    const W = nnCanvas.width, H = nnCanvas.height;
+    ctx.clearRect(0, 0, W, H);
+    const cfg = lastCfg;
+    const sizes = layerSizes(cfg);
+
+    if (cfg.inputs.length === 0) {
+      ctx.fillStyle = "#555";
+      ctx.font = "13px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("Pick at least one input", W / 2, H / 2);
+      return;
+    }
+
+    // connections: blue = positive weight, red = negative, thicker = stronger
+    for (let l = 0; l < sizes.length - 1; l++)
+      for (let to = 0; to < sizes[l + 1]; to++)
+        for (let from = 0; from < sizes[l]; from++) {
+          const w = model.weights[l][to][from];
+          const a = 0.1 + 0.6 * Math.min(1, Math.abs(w) / 2);
+          ctx.strokeStyle = (w >= 0 ? "rgba(0,0,255," : "rgba(255,0,0,") + a + ")";
+          ctx.lineWidth = 0.5 + Math.min(3, Math.abs(w) * 1.5);
+          const p1 = nodePos(sizes, l, from), p2 = nodePos(sizes, l + 1, to);
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        }
+
+    // lines going into the selected node, drawn on top
+    if (selected.layer > 0) {
+      const l = selected.layer - 1;
+      for (let from = 0; from < sizes[l]; from++) {
+        const w = model.weights[l][selected.index][from];
+        ctx.strokeStyle = w >= 0 ? "blue" : "red";
+        ctx.lineWidth = 1 + Math.min(3, Math.abs(w) * 1.5);
+        const p1 = nodePos(sizes, l, from), p2 = nodePos(sizes, selected.layer, selected.index);
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+      }
+    }
+
+    // nodes
+    sizes.forEach((count, l) => {
+      for (let n = 0; n < count; n++) {
+        const p = nodePos(sizes, l, n);
+        let fill = l === 0 ? "#3333ff" : l === sizes.length - 1 ? "yellow" : "#000";
+        if (activations && activations[l] && activations[l][n] !== undefined && l > 0) {
+          const g = 255 - Math.round(Math.min(1, Math.abs(activations[l][n])) * 255);
+          fill = "rgb(" + g + "," + g + "," + g + ")";
+        }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#000";
+        ctx.stroke();
+      }
+    });
+
+    // ring around the selected node
+    if (selected.layer < sizes.length && selected.index < sizes[selected.layer]) {
+      const p = nodePos(sizes, selected.layer, selected.index);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "orange";
+      ctx.stroke();
+    }
+
+    // output labels
+    ctx.fillStyle = "#000";
+    ctx.font = "13px Arial";
+    ctx.textAlign = "right";
+    NN.outputs.forEach((name, n) => {
+      ctx.fillText(name, W - 6, nodePos(sizes, sizes.length - 1, n).y + 4);
+    });
+  }
+
+  nnCanvas.addEventListener("click", (e) => {
+    const hit = findNode(...canvasCoords(e));
+    if (hit) selectNode(hit.layer, hit.index);
+  });
+  nnCanvas.addEventListener("mousemove", (e) => {
+    const hit = lastCfg.inputs.length ? findNode(...canvasCoords(e)) : null;
+    nnCanvas.style.cursor = hit ? "pointer" : "default";
+    nnCanvas.title = hit ? nodeLabel(lastCfg, hit.layer, hit.index) : "";
+  });
+
+  // ---------- Node picker + inspector ----------
+  const nodeSelect = $("node-select");
+  const inspector = $("node-inspector");
+
+  function renderNodeSelect() {
+    const cfg = lastCfg, sizes = layerSizes(cfg);
+    let html = "";
+    sizes.forEach((count, l) => {
+      const title = l === 0 ? "Inputs" : l === sizes.length - 1 ? "Outputs" : "Hidden layer " + l;
+      html += '<optgroup label="' + title + '">';
+      for (let n = 0; n < count; n++)
+        html += '<option value="' + l + ":" + n + '">' + nodeLabel(cfg, l, n) + "</option>";
+      html += "</optgroup>";
+    });
+    nodeSelect.innerHTML = html;
+    nodeSelect.value = selected.layer + ":" + selected.index;
+  }
+
+  function selectNode(layer, index) {
+    selected = { layer, index };
+    nodeSelect.value = layer + ":" + index;
+    renderInspector();
+    drawNetwork();
+  }
+  nodeSelect.addEventListener("change", () => {
+    const [l, i] = nodeSelect.value.split(":").map(Number);
+    selectNode(l, i);
+  });
+
+  function renderInspector() {
+    const cfg = lastCfg, sizes = layerSizes(cfg);
+    if (cfg.inputs.length === 0) { inspector.textContent = "Pick at least one input first."; return; }
+    const { layer, index } = selected;
+    const dis = training ? " disabled" : "";
+    let html = "<b>" + nodeLabel(cfg, layer, index) + "</b>";
+    html += '<div>Current value: <span id="node-activation">' + activationText() + "</span></div>";
+
+    if (layer === 0) {
+      html += '<p class="hint">This is an input. Its value comes from the game, so there is nothing to edit.</p>';
+    } else {
+      html += '<div>Bias: <input type="number" step="0.1" data-kind="bias" value="' + model.biases[layer - 1][index] + '"' + dis + "></div>";
+      html += "<div>Incoming weights:</div><table>";
+      for (let from = 0; from < sizes[layer - 1]; from++) {
+        html += "<tr><td>" + nodeLabel(cfg, layer - 1, from) + '</td><td><input type="number" step="0.1" data-kind="w" data-from="' + from +
+                '" value="' + model.weights[layer - 1][index][from] + '"' + dis + "></td></tr>";
+      }
+      html += '</table><button type="button" id="btn-node-random"' + dis + ">Randomize this node</button>";
+    }
+    inspector.innerHTML = html;
+  }
+
+  function activationText() {
+    const a = activations && activations[selected.layer] ? activations[selected.layer][selected.index] : undefined;
+    return a === undefined ? "(not running yet)" : String(fmt(a));
+  }
+
+  inspector.addEventListener("input", (e) => {
+    const el = e.target;
+    const v = parseFloat(el.value);
+    if (isNaN(v) || selected.layer === 0) return;
+    if (el.dataset.kind === "bias") model.biases[selected.layer - 1][selected.index] = v;
+    if (el.dataset.kind === "w") model.weights[selected.layer - 1][selected.index][+el.dataset.from] = v;
+    drawNetwork();
+    emitWeights();
+  });
+  inspector.addEventListener("click", (e) => {
+    if (e.target.id !== "btn-node-random") return;
+    const l = selected.layer - 1;
+    model.weights[l][selected.index] = model.weights[l][selected.index].map(rnd);
+    model.biases[l][selected.index] = 0;
+    renderInspector();
+    drawNetwork();
+    emitWeights();
+  });
+
+  function networkChanged() {
+    renderLayers();
+    rebuildModel();
+    const sizes = layerSizes(lastCfg);
+    if (selected.layer >= sizes.length || selected.index >= sizes[selected.layer]) {
+      selected = { layer: Math.min(1, sizes.length - 1), index: 0 };
+    }
+    renderNodeSelect();
+    renderInspector();
+    drawNetwork();
+    $("btn-train").disabled = training || lastCfg.inputs.length === 0;
+    emit("network-change", { config: getNetworkConfig() });
+    emitWeights();
+  }
+
+  // Training controls
+  const popSize = $("pop-size"), mutRate = $("mut-rate");
+  popSize.addEventListener("input", () => { $("pop-size-val").textContent = popSize.value; });
+  mutRate.addEventListener("input", () => { $("mut-rate-val").textContent = mutRate.value; });
+
+  function setTraining(on) {
+    training = on;
+    PacState.training = on;
+    renderInspector();
+    $("btn-train").disabled = on || getNetworkConfig().inputs.length === 0;
+    $("btn-stop-train").disabled = !on;
+    [popSize, mutRate, inputList, $("btn-add-layer")].forEach(el => {
+      if (el.tagName === "DIV") el.querySelectorAll("input").forEach(i => i.disabled = on);
+      else el.disabled = on;
+    });
+    layerList.querySelectorAll("button").forEach(b => b.disabled = on);
+    if (!on) renderLayers();
+  }
+
+  $("btn-train").addEventListener("click", () => {
+    setTraining(true);
+    emit("train-start", { config: getNetworkConfig(), population: +popSize.value, mutation: +mutRate.value / 100 });
+  });
+  $("btn-stop-train").addEventListener("click", () => { setTraining(false); emit("train-stop"); });
+  $("btn-watch-best").addEventListener("click", () => emit("watch-best"));
+  $("btn-reset-brain").addEventListener("click", () => {
+    history.length = 0; drawChart();
+    randomizeModel(); renderInspector(); drawNetwork(); emitWeights();
+    ["stat-gen", "stat-best", "stat-avg"].forEach(id => $(id).textContent = "0");
+    $("btn-watch-best").disabled = true;
+    emit("reset-brain", { config: getNetworkConfig() });
+  });
+
+  // Fitness chart
+  const history = [];
+  const chart = $("fitness-chart");
+  function drawChart() {
+    const ctx = chart.getContext("2d");
+    const W = chart.width, H = chart.height, pad = 28;
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = "#999"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad, 8); ctx.lineTo(pad, H - pad); ctx.lineTo(W - 8, H - pad); ctx.stroke();
+    ctx.fillStyle = "#555"; ctx.font = "12px Arial"; ctx.textAlign = "center";
+    ctx.fillText("Generation", W / 2, H - 6);
+    if (history.length < 2) {
+      ctx.fillText("Press Start training to see scores climb", W / 2, H / 2);
+      return;
+    }
+    const maxV = Math.max(1, ...history.map(h => h.best));
+    const x = (i) => pad + i * (W - pad - 8) / (history.length - 1);
+    const y = (v) => H - pad - v / maxV * (H - pad - 12);
+    for (const [key, color] of [["avg", "blue"], ["best", "red"]]) {
+      ctx.beginPath(); ctx.lineWidth = 2.5; ctx.strokeStyle = color;
+      history.forEach((h, i) => i ? ctx.lineTo(x(i), y(h[key])) : ctx.moveTo(x(i), y(h[key])));
+      ctx.stroke();
+    }
+    ctx.textAlign = "left";
+    ctx.fillStyle = "red"; ctx.fillText("best", pad + 8, 16);
+    ctx.fillStyle = "blue"; ctx.fillText("average", pad + 50, 16);
+  }
+
+  // ---------- Public API for main.js ----------
+  window.PacUI = {
+    getMode: () => modeSelect.value,
+    getRules: () => ({ rules: getRules(), fallback: fallbackSel.value }),
+    getNetworkConfig,
+    getNetwork,   // { config, weights, biases }
+    // load weights (e.g. the best brain from training)
+    setNetwork({ weights, biases }) {
+      model = { weights: JSON.parse(JSON.stringify(weights)), biases: JSON.parse(JSON.stringify(biases)) };
+      renderInspector();
+      drawNetwork();
+    },
+    // activations[layer][neuron] for the last decision, to show live values
+    setActivations(a) {
+      activations = a;
+      const span = document.getElementById("node-activation");
+      if (span) span.textContent = activationText();
+      drawNetwork();
+    },
+    getTrainingSettings: () => ({ population: +popSize.value, mutation: +mutRate.value / 100 }),
+    getSpeed: () => parseFloat($("speed-select").value),
+
+    // call these from your game / worker code
+    setHumanBest(score) { $("best-human-score").textContent = score; },
+    setThinking(text) { $("thinking").textContent = text; },
+    setTrainingStats({ generation, best, average }) {
+      $("stat-gen").textContent = generation;
+      $("stat-best").textContent = Math.round(best);
+      $("stat-avg").textContent = Math.round(average);
+      history.push({ best, avg: average });
+      drawChart();
+      $("btn-watch-best").disabled = false;
+    },
+    trainingFinished() { setTraining(false); },
+  };
+
+  // ---------- Event listeners ----------
+  // PacState is always up to date. Read it any time from main.js:  if (PacState.running) { ... }
+  // PacHooks lets you react the moment something happens. Assign a function with the event's name:
+  //     PacHooks.reset = restartGame;
+  //     PacHooks["step-mode"] = (d) => console.log(d.enabled);
+  // The listeners live here (not in main.js) so they are already active when the page sets itself
+  // up. main.js loads later and would otherwise miss the very first events.
+  const PacState = window.PacState = {
+    mode: modeSelect.value,
+    running: true,
+    speed: parseFloat($("speed-select").value),
+    showThinking: $("chk-thinking").checked,
+    stepMode: $("chk-step").checked,
+    rules: [],            // [{ sensor, kind, op, value, action }, ...]  highest priority first
+    fallback: null,       // action used when no rule matches
+    network: null,        // { config, weights, biases }
+    training: false,
+    trainingSettings: null,
+    partying: false,
+  };
+  const PacHooks = window.PacHooks = {};
+
+  function on(name, fn) {
+    document.addEventListener("pac:" + name, (e) => {
+      fn(e.detail);                                  // update PacState first
+      if (PacHooks[name]) PacHooks[name](e.detail);  // then call main.js's function, if it set one
+    });
+  }
+
+  on("mode",         (d) => { PacState.mode = d.mode; });
+  on("run",          ()  => { PacState.running = true; });
+  on("pause",        ()  => { PacState.running = false; });
+  on("reset",        ()  => {});                                  // nothing to store, main.js restarts the game with PacHooks.reset
+  on("party",        ()  => { PacState.partying = !PacState.partying; $("btn-party").textContent = PacState.partying ? "Party ON" : "Party"; });
+  on("speed",        (d) => { PacState.speed = d.speed; });
+  on("thinking",     (d) => { PacState.showThinking = d.enabled; });
+  on("step-mode",    (d) => { PacState.stepMode = d.enabled; });
+  on("rules-change", (d) => { PacState.rules = d.rules; PacState.fallback = d.fallback; });
+  on("network-change", () => {});                                 // weights-change fires right after, which updates PacState.network
+  on("weights-change", (d) => { PacState.network = d.network; });
+  on("train-start",  (d) => { PacState.trainingSettings = { population: d.population, mutation: d.mutation }; });
+  on("train-stop",   ()  => {});                                  // PacState.training is already false
+  on("watch-best",   ()  => {});                                  // nothing to store, use PacHooks["watch-best"]
+  on("reset-brain",  ()  => {});                                  // nothing to store, use PacHooks["reset-brain"]
+
+  // ---------- Init ----------
+  loadExample();
+  networkChanged();
+  drawChart();
+  applyMode();
+})();
 </script>
+
 <script type="module" src="src/main.js"></script>
+<script>
+// ---------- Highscores ----------
+let highscores = [];
+let currentFilter = 'all';
+
+function loadHighscoresFromRepo() {
+  fetch('highscores.json')
+    .then(r => r.ok ? r.json() : [])
+    .then(data => { highscores = Array.isArray(data) ? data : []; renderHighscores(); })
+    .catch(() => { highscores = []; renderHighscores(); });
+}
+
+function renderHighscores() {
+  const list = document.getElementById('highscore-list');
+  if (!list) return;
+  let filtered = highscores;
+  if (currentFilter !== 'all') filtered = highscores.filter(s => (s.mode || s.category) === currentFilter);
+  filtered.sort((a,b) => (b.score || 0) - (a.score || 0));
+  if (!filtered.length) { list.innerHTML = '<div style="padding:6px;opacity:.6;">No entries yet.</div>'; return; }
+  list.innerHTML = filtered.map((s,i) => {
+    const name = s.username || s.name || 'Unknown';
+    const mode = s.mode || s.category || 'play';
+    const lvl = s.level ? '• L'+s.level : '';
+    const rankColor = i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : '#aaa';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:5px 4px;border-bottom:1px solid #333;">'+
+      '<span style="font-weight:bold;color:'+rankColor+';min-width:18px;">'+(i+1)+'</span>'+
+      '<span style="flex:1;">'+escapeHtml(name)+'</span>'+
+      '<b style="color:#0f0;">'+s.score+'</b> <span style="opacity:.6;font-size:11px;">'+escapeHtml(mode)+' '+escapeHtml(lvl)+'</span></div>';
+  }).join('');
+}
+function escapeHtml(t) {
+  const d = document.createElement('div'); d.textContent = t; return d.innerHTML;
+}
+function filterScores(mode) {
+  currentFilter = mode;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase().includes(mode === 'all' ? 'all' : (mode === 'neural-network' ? 'neural' : mode))));
+  renderHighscores();
+}
+function recordHighscore(score, mode, level) {
+  const saveOn = document.getElementById('hs-save-toggle') && document.getElementById('hs-save-toggle').checked;
+  if (!saveOn) return;
+  const name = (document.getElementById('hs-username') && document.getElementById('hs-username').value.trim()) || 'Player';
+  const category = mode || 'play';
+  const myCats = highscores.filter(h => h.username === name && (h.mode || h.category) === category);
+  const best = myCats.length ? Math.max(...myCats.map(h => h.score || 0)) : 0;
+  if (score > best) {
+    highscores.push({ username: name, score, mode: category, level, date: new Date().toISOString() });
+    highscores.sort((a,b) => (b.score||0)-(a.score||0));
+    const kept = {};
+    highscores.forEach(h => {
+      const k = (h.username||'')+'|'+(h.mode||h.category||'');
+      if (!kept[k]) kept[k] = [];
+      kept[k].push(h);
+    });
+    highscores = [];
+    Object.values(kept).forEach(arr => { arr.sort((a,b)=>(b.score||0)-(a.score||0)); highscores.push(...arr.slice(0,1)); });
+    renderHighscores();
+  }
+}
+window.recordHighscore = recordHighscore;
+window.loadHighscoresFromRepo = loadHighscoresFromRepo;
+window.filterScores = filterScores;
+window.renderHighscores = renderHighscores;
+// Load on startup
+loadHighscoresFromRepo();
+</script>
 </body>
 </html>

@@ -1,15 +1,13 @@
 import { isPortal, getPortalExit, GRIDSIZE, MAP, isWall } from "./map.js";
 import { generateSprites, createSprite } from "./sprites.js";
-import {
-  setupKeyListener, choseDirection, RELEASE,
-  resetGhostMode, updateGhostMode, frightenGhosts, reachedHome,
-} from "./control.js";
+import { setupKeyListener, choseDirection, RELEASE, resetGhostMode, updateGhostMode, frightenGhosts, reachedHome, ORDER } from "./control.js";
+import { decide } from "./brain/decision.js";
+import { decideNetwork } from "./brain/network.js";
 
 export const STEP = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
 const TICK_MS = 300;        // time a sprite needs per tile at speed 1
 const MAX_FRAME_MS = 100;   // clamp so a background tab doesn't cause a burst of moves
-const RESTART_BTN = { width: 240, height: 90, fontSize: 40 };
 const START_LIVES = 3;      // set to 1 for "game over on the first hit"
 const DEATH_PAUSE_MS = 1200;
 
@@ -43,10 +41,15 @@ let last = 0;
 
 let score = 0;
 let lives = START_LIVES;
+let level = 1;
+let levelTime = 0;     // ms spent in current level
+let levelBonus = 0;    // points awarded for finishing quickly
 let ghostCombo = 0;         // ghosts eaten since the last pellet (200/400/800/1600)
 let dotsEaten = 0;
 let fruitsSpawned = 0;
 let pauseMs = 0;            // > 0 while the scene is frozen after losing a life
+let lastJunction = null;    // "x,y" of the last junction we reported, so we don't report it twice
+let lastDecision = null;    // result of the last neural network decision (scores for the thinking readout)
 
 // ---------- Setup ----------
 
@@ -94,11 +97,18 @@ function init() {
   tickCount = 0;
   score = 0;
   lives = START_LIVES;
+  level = 1;
+  levelTime = 0;
+  levelBonus = 0;
   ghostCombo = 0;
   dotsEaten = 0;
   fruitsSpawned = 0;
   pauseMs = 0;
-  resetGhostMode(game);     // sets game.mode to the first scatter phase
+  lastJunction = null;
+  lastDecision = null;
+  resetGhostMode(game, level);     // sets game.mode to the first scatter phase
+  PacUI.setThinking("Pac-Man is waiting for his first junction.");
+  PacUI.setActivations(null);   // clear the shading in the network diagram
 }
 
 // After losing a life: everybody back to the start, dots and pellets stay as they are
@@ -117,12 +127,37 @@ function resetRound() {
   tickCount = 0;
   ghostCombo = 0;
   pauseMs = 0;
-  resetGhostMode(game);
+  lastJunction = null;
+  lastDecision = null;
+  resetGhostMode(game, level);
 }
 
 function endGame(result) {
   game.mode = "over";
   game.result = result;
+  if (result === "won") {
+    // quick finish bonus: faster levels get more bonus per second saved
+    const thresholds = { 1: 60000, 2: 40000 };
+    const thresh = thresholds[level] || Math.max(15000, 60000 - (level - 1) * 10000);
+    const saved = Math.max(0, thresh - levelTime);
+    const bonusPerSec = level * 50;  // 50, 100, 150 points per second saved
+    levelBonus = Math.round(saved / 1000 * bonusPerSec);
+    score += levelBonus;
+    level++;
+    levelTime = 0;
+    // restart round with new level settings — reuse init but preserve progress
+    const savedScore = score;
+    const savedLevel = level;
+    init();
+    score = savedScore;
+    level = savedLevel;
+    resetGhostMode(game, level);
+  }
+  // Save highscore on any finished game if toggle is on and it beats category best
+  if (typeof window !== 'undefined' && window.recordHighscore) {
+    const mode = (window.PacState && window.PacState.mode) ? window.PacState.mode : 'play';
+    window.recordHighscore(score, mode, level);
+  }
 }
 
 function loseLife() {
@@ -235,6 +270,48 @@ function resolveGhostContact() {
   }
 }
 
+// ---------- Junctions (for "Pause at each junction" and the thinking readout) ----------
+
+// A junction is a tile with three or more open neighbours
+const isJunction = (x, y) =>
+  Object.values(STEP).filter(([dx, dy]) => !isWall(x + dx, y + dy)).length >= 3;
+
+// Manhattan distance in tiles to the closest ghost that is out and about, or null if there is none
+function nearestGhostDistance(p) {
+  let best = null;
+  for (const g of sprites) {
+    if (g.kind !== "ghost" || g.state === "house" || g.state === "eaten") continue;
+    const d = Math.abs(g.x - p.x) + Math.abs(g.y - p.y);
+    if (best === null || d < best) best = d;
+  }
+  return best;
+}
+
+// Called right after Pac-Man has picked his direction on a junction tile
+function onJunction(p) {
+  const key = `${p.x},${p.y}`;
+  if (key === lastJunction) return;   // standing still on the same junction: report it once
+  lastJunction = key;
+
+  if (PacState.mode !== "play" && PacState.showThinking) {
+    const near = nearestGhostDistance(p);
+    const scared = sprites.some((o) => o.kind === "ghost" && o.state === "frightened");
+    let text =
+      `Junction at (${p.x}, ${p.y}). ` +
+      (near === null ? "No ghosts around. " : `Nearest ghost is ${near} tiles away. `) +
+      (scared ? "Ghosts are scared. " : "") +
+      `Going ${p.dir}.`;
+    if (PacState.mode === "neural-network" && lastDecision) {
+      const scores = ORDER.map((d, i) => `${d} ${lastDecision.outputs[i].toFixed(2)}`).join(", ");
+      text += ` Scores: ${scores} (walls are ignored).`;
+    }
+    PacUI.setThinking(text);
+  }
+
+  // "Pause at each junction": stop here, the Run button continues
+  if (PacState.stepMode) PacState.running = false;
+}
+
 // One tile of movement for a single sprite
 function step(s) {
   s.prevX = s.x;
@@ -251,7 +328,25 @@ function step(s) {
     const item = findTouchedConsumable(s);
     if (item) eatConsumable(item);
     if (game.mode === "over") return;
-    if (canMove(s, dir.val)) s.dir = dir.val;
+
+    // Movement decision
+    if (PacState.mode === "play") {
+      if (canMove(s, dir.val)) s.dir = dir.val;
+    } else if (PacState.mode === "rules") {
+      const decision = decide({ game, player: s, sprites, legal: Object.keys(STEP).filter((d) => canMove(s, d)) });
+      if (decision && canMove(s, decision)) s.dir = decision;
+    } else if (PacState.mode === "neural-network") {
+      if (PacState.network) {
+        const legal = Object.keys(STEP).filter((d) => canMove(s, d));
+        const result = decideNetwork(PacState.network, s, sprites, legal);
+        if (result && result.direction) {
+          s.dir = result.direction;
+          lastDecision = result;
+          PacUI.setActivations(result.activations);
+        }
+      }
+    }
+    if (isJunction(s.x, s.y)) onJunction(s);
   }
 
   // Standing on a portal and the way ahead is blocked: wrap to the other side
@@ -285,15 +380,17 @@ function update(delta) {
 
   elapsed += delta;
   tickCount = Math.floor(elapsed / TICK_MS);
+  if (game.mode === "play" && !game.result) levelTime += delta;
 
   updateGhostMode(game, delta);   // scatter/chase schedule and the frightened timer
   updateFruit(delta);
 
   for (const s of [...sprites]) { // copy: step() may add or remove consumables
     if (s.isStatic) continue;
-    if (pauseMs > 0 || game.mode === "over") break;
-    s.clock += delta * speedOf(s);
-    while (s.clock >= TICK_MS && game.mode !== "over" && pauseMs <= 0) {
+    // PacState.running can turn false in the middle of a frame ("pause at each junction")
+    if (pauseMs > 0 || game.mode === "over" || !PacState.running) break;
+    s.clock += delta * speedOf(s) * PacState.speed;
+    while (s.clock >= TICK_MS && game.mode !== "over" && pauseMs <= 0 && PacState.running) {
       s.clock -= TICK_MS;
       step(s);
     }
@@ -325,22 +422,65 @@ function drawHud() {
   ctx.textAlign = "left";
   ctx.strokeText(`Score: ${score}`, 8, 6);
   ctx.fillText(`Score: ${score}`, 8, 6);
+  ctx.textAlign = "center";
+  ctx.strokeText(`Level ${level}`, canvas.width / 2, 6);
+  ctx.fillText(`Level ${level}`, canvas.width / 2, 6);
   ctx.textAlign = "right";
   ctx.strokeText(`Lives: ${lives}`, canvas.width - 8, 6);
   ctx.fillText(`Lives: ${lives}`, canvas.width - 8, 6);
   ctx.restore();
 }
 
+function drawBackground(ctx, canvas, elapsed) {
+  const w = canvas.width, h = canvas.height;
+
+  if (!PacState.partying) {
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, w, h);
+    return;
+  }
+
+  const hu = elapsed / 10;
+
+  // diagonal gradient between two shifting dark colors
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, `hsl(${hu % 360} 100% 15%)`);
+  g.addColorStop(1, `hsl(${(hu + 120) % 360} 100% 15%)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // one glow in the center that pulses to the beat
+  const pulse = 0.5 + 0.5 * Math.sin(elapsed / 300);
+  const r = Math.max(w, h) * (0.4 + 0.15 * pulse);
+  const glow = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, r);
+  glow.addColorStop(0, `hsl(${(hu + 240) % 360} 100% 35% / 0.5)`);
+  glow.addColorStop(1, "hsl(0 0% 0% / 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, w, h);
+}
+
 function draw() {
-  ctx.fillStyle = "black";
+  if (PacState.partying)
+    drawBackground(ctx, canvas, elapsed);
+  else
+    ctx.fillStyle = "black";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   for (const s of sprites) drawSprite(s);
   drawHud();
 }
 
-function restartRect() {
-  const { width: w, height: h } = RESTART_BTN;
-  return { x: canvas.width / 2 - w / 2, y: canvas.height / 2 + 40, w, h };
+// Small label at the top so a paused game doesn't look frozen by accident
+function drawPaused() {
+  ctx.save();
+  ctx.font = "bold 28px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "black";
+  ctx.fillStyle = "white";
+  ctx.strokeText("Paused", canvas.width / 2, 6);
+  ctx.fillText("Paused", canvas.width / 2, 6);
+  ctx.restore();
 }
 
 function drawGameOver() {
@@ -349,20 +489,14 @@ function drawGameOver() {
   const won = game.result === "won";
   ctx.fillStyle = won ? "gold" : "red";
   ctx.font = "bold 128px sans-serif";
-  ctx.fillText(won ? "You Win!" : "Game Over", canvas.width / 2, canvas.height / 2);
+  ctx.fillText(won ? "Level Complete!" : "Game Over", canvas.width / 2, canvas.height / 2);
 
-  const r = restartRect();
   ctx.fillStyle = "white";
-  ctx.fillRect(r.x, r.y, r.w, r.h);
-  ctx.strokeStyle = "black";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(r.x, r.y, r.w, r.h);
-
-  ctx.fillStyle = "black";
-  ctx.font = `${RESTART_BTN.fontSize}px sans-serif`;
-  ctx.textBaseline = "middle";
-  ctx.fillText("Restart", r.x + r.w / 2, r.y + r.h / 2);
-  ctx.textBaseline = "alphabetic";
+  ctx.font = "40px sans-serif";
+  if (won && level > 1 && levelBonus > 0) {
+    ctx.fillText(`Quick Bonus! +${levelBonus}`, canvas.width / 2, canvas.height / 2 + 40);
+  }
+  ctx.fillText(`Level ${level}`, canvas.width / 2, canvas.height / 2 + 80);
 }
 
 // ---------- Main loop ----------
@@ -371,35 +505,39 @@ let overAt = 0;
 
 function frame(now) {
   const delta = now - last;
-  last = now;
+  last = now;   // updated every frame, so there is no burst of movement after a pause
 
-  if (game.mode !== "over") {
+  if (game.mode === "over" && game.result === "won" && level < 3) {
+    // quick level transition: don't freeze; restart immediately
+    // (endGame already handled score + setup; just resume)
+    game.result = null;
+    game.mode = "play";
+  } else if (game.mode === "over") {
+    if (now - overAt < TICK_MS) {
+      // let the last step finish animating
+      for (const s of sprites) {
+        if (!s.isStatic) s.clock = Math.min(s.clock + delta * speedOf(s), TICK_MS);
+      }
+      draw();
+    } else {
+      drawGameOver();
+    }
+  } else if (PacState.running) {
     update(delta);
     draw();
     if (game.mode === "over") overAt = now;
-  } else if (now - overAt < TICK_MS) {
-    // let the last step finish animating
-    for (const s of sprites) {
-      if (!s.isStatic) s.clock = Math.min(s.clock + delta * speedOf(s), TICK_MS);
-    }
-    draw();
   } else {
-    drawGameOver();
+    draw();
+    drawPaused();
   }
 
   requestAnimationFrame(frame);
 }
 
-// ---------- Input ----------
+// ---------- Controls from the page ----------
 
-canvas.addEventListener("click", (e) => {
-  if (game.mode !== "over") return;
-  const b = canvas.getBoundingClientRect();
-  const x = (e.clientX - b.left) * (canvas.width / b.width);
-  const y = (e.clientY - b.top) * (canvas.height / b.height);
-  const r = restartRect();
-  if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) init();
-});
+// The Reset button in the control panel restarts the game (replaces the old button on the canvas)
+PacHooks.reset = init;
 
 setupKeyListener(dir);
 
