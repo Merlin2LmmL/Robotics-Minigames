@@ -990,9 +990,19 @@
 // ---------- Highscores ----------
 let highscores = [];
 let currentFilter = 'all';
+const API = 'https://minigame-leaderboard.ortnermerlin.workers.dev';
+
+async function submitScore(name, score, mode, level) {
+  await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, score, mode, level }),
+  });
+}
 
 function loadHighscoresFromRepo() {
-  fetch('highscores.json')
+  const url = currentFilter === 'all' ? API : API + '?mode=' + encodeURIComponent(currentFilter);
+  fetch(url)
     .then(r => r.ok ? r.json() : [])
     .then(data => { highscores = Array.isArray(data) ? data : []; renderHighscores(); })
     .catch(() => { highscores = []; renderHighscores(); });
@@ -1004,17 +1014,15 @@ function renderHighscores() {
   let filtered = highscores;
   if (currentFilter !== 'all') filtered = highscores.filter(s => (s.mode || s.category) === currentFilter);
   filtered.sort((a,b) => (b.score || 0) - (a.score || 0));
-  if (!filtered.length) { list.innerHTML = '<div style="padding:6px;opacity:.6;">No entries yet.</div>'; return; }
-  list.innerHTML = filtered.map((s,i) => {
-    const name = s.username || s.name || 'Unknown';
-    const mode = s.mode || s.category || 'play';
-    const lvl = s.level ? '• L'+s.level : '';
-    const rankColor = i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : '#aaa';
-    return '<div style="display:flex;align-items:center;gap:10px;padding:5px 4px;border-bottom:1px solid #333;">'+
-      '<span style="font-weight:bold;color:'+rankColor+';min-width:18px;">'+(i+1)+'</span>'+
-      '<span style="flex:1;">'+escapeHtml(name)+'</span>'+
-      '<b style="color:#0f0;">'+s.score+'</b> <span style="opacity:.6;font-size:11px;">'+escapeHtml(mode)+' '+escapeHtml(lvl)+'</span></div>';
-  }).join('');
+  if (!filtered.length) { list.innerHTML = '<div style="padding:10px;opacity:.6;">No entries yet.</div>'; return; }
+  list.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;color:#111;"><thead><tr style="background:#ffd700;color:#111;text-align:left;"><th style="padding:6px 4px;border-bottom:2px solid #ccc;">#</th><th style="padding:6px 4px;border-bottom:2px solid #ccc;">Player</th><th style="padding:6px 4px;border-bottom:2px solid #ccc;">Score</th><th style="padding:6px 4px;border-bottom:2px solid #ccc;">Mode</th><th style="padding:6px 4px;border-bottom:2px solid #ccc;">Level</th></tr></thead><tbody>' +
+    filtered.map((s,i) => {
+      const name = s.username || s.name || 'Unknown';
+      const mode = s.mode || s.category || 'play';
+      const lvl = s.level || '-';
+      const bg = i % 2 === 0 ? '#f2f2f2' : '#ffffff';
+      return '<tr style="background:'+bg+';color:#111;"><td style="padding:5px 4px;font-weight:bold;color:#d4af37;">'+(i+1)+'</td><td style="padding:5px 4px;">'+escapeHtml(name)+'</td><td style="padding:5px 4px;color:#009900;font-weight:bold;">'+(s.score||0)+'</td><td style="padding:5px 4px;opacity:.85;">'+escapeHtml(mode)+'</td><td style="padding:5px 4px;opacity:.7;">'+escapeHtml(String(lvl))+'</td></tr>';
+    }).join('') + '</tbody></table>';
 }
 function escapeHtml(t) {
   const d = document.createElement('div'); d.textContent = t; return d.innerHTML;
@@ -1022,28 +1030,14 @@ function escapeHtml(t) {
 function filterScores(mode) {
   currentFilter = mode;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase().includes(mode === 'all' ? 'all' : (mode === 'neural-network' ? 'neural' : mode))));
-  renderHighscores();
+  loadHighscoresFromRepo();
 }
 function recordHighscore(score, mode, level) {
   const saveOn = document.getElementById('hs-save-toggle') && document.getElementById('hs-save-toggle').checked;
   if (!saveOn) return;
   const name = (document.getElementById('hs-username') && document.getElementById('hs-username').value.trim()) || 'Player';
-  const category = mode || 'play';
-  const myCats = highscores.filter(h => h.username === name && (h.mode || h.category) === category);
-  const best = myCats.length ? Math.max(...myCats.map(h => h.score || 0)) : 0;
-  if (score > best) {
-    highscores.push({ username: name, score, mode: category, level, date: new Date().toISOString() });
-    highscores.sort((a,b) => (b.score||0)-(a.score||0));
-    const kept = {};
-    highscores.forEach(h => {
-      const k = (h.username||'')+'|'+(h.mode||h.category||'');
-      if (!kept[k]) kept[k] = [];
-      kept[k].push(h);
-    });
-    highscores = [];
-    Object.values(kept).forEach(arr => { arr.sort((a,b)=>(b.score||0)-(a.score||0)); highscores.push(...arr.slice(0,1)); });
-    renderHighscores();
-  }
+  submitScore(name, score, mode || 'play', level);
+  loadHighscoresFromRepo();
 }
 window.recordHighscore = recordHighscore;
 window.loadHighscoresFromRepo = loadHighscoresFromRepo;
