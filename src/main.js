@@ -323,8 +323,6 @@ function step(s) {
   }
 
   if (s === player) {
-    // Pac-Man has visually arrived on his tile only now (the drawing lags one step behind
-    // the logic), so this is the moment he eats what is on it
     const item = findTouchedConsumable(s);
     if (item) eatConsumable(item);
     if (game.mode === "over") return;
@@ -387,7 +385,6 @@ function update(delta) {
 
   for (const s of [...sprites]) { // copy: step() may add or remove consumables
     if (s.isStatic) continue;
-    // PacState.running can turn false in the middle of a frame ("pause at each junction")
     if (pauseMs > 0 || game.mode === "over" || !PacState.running) break;
     s.clock += delta * speedOf(s) * PacState.speed;
     while (s.clock >= TICK_MS && game.mode !== "over" && pauseMs <= 0 && PacState.running) {
@@ -505,11 +502,9 @@ let overAt = 0;
 
 function frame(now) {
   const delta = now - last;
-  last = now;   // updated every frame, so there is no burst of movement after a pause
+  last = now;
 
   if (game.mode === "over" && game.result === "won" && level < 3) {
-    // quick level transition: don't freeze; restart immediately
-    // (endGame already handled score + setup; just resume)
     game.result = null;
     game.mode = "play";
   } else if (game.mode === "over") {
@@ -536,7 +531,6 @@ function frame(now) {
 
 // ---------- Controls from the page ----------
 
-// The Reset button in the control panel restarts the game (replaces the old button on the canvas)
 PacHooks.reset = init;
 
 setupKeyListener(dir);

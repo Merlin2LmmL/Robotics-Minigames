@@ -990,7 +990,7 @@
 // ---------- Highscores ----------
 let highscores = [];
 let currentFilter = 'all';
-const API = "https://minigame-leaderboard.ortnermerlin.workers.dev/scores";
+const API = 'https://minigame-leaderboard.ortnermerlin.workers.dev';
 
 async function submitScore(name, score, mode, level) {
   await fetch(API, {
@@ -1032,11 +1032,11 @@ function filterScores(mode) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase().includes(mode === 'all' ? 'all' : (mode === 'neural-network' ? 'neural' : mode))));
   loadHighscoresFromRepo();
 }
-async function recordHighscore(score, mode, level) {
+function recordHighscore(score, mode, level) {
   const saveOn = document.getElementById('hs-save-toggle') && document.getElementById('hs-save-toggle').checked;
   if (!saveOn) return;
   const name = (document.getElementById('hs-username') && document.getElementById('hs-username').value.trim()) || 'Player';
-  await submitScore(name, score, mode || 'play', level);
+  submitScore(name, score, mode || 'play', level);
   loadHighscoresFromRepo();
 }
 window.recordHighscore = recordHighscore;

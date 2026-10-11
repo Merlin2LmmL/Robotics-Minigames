@@ -35,7 +35,12 @@ export const MAP = [
     "#.##########.##.##########.#",
     "#..........................#",
     "############################"
-]
+];
+
+export function setMAP(arr) {
+  MAP.length = 0;
+  arr.forEach(s => MAP.push(s));
+}
 
 export const isWall = (x, y) => {
     if (y < 0 || y >= MAP.length) return true;
