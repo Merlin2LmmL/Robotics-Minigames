@@ -154,7 +154,7 @@ function endGame(result) {
     level = savedLevel;
     resetGhostMode(game, level);
   }
-  // Save highscore on any finished game if toggle is on and it beats category best
+  // Save highscore on finished game if toggle is on and score beats existing best
   if (typeof window !== 'undefined' && window.recordHighscore) {
     const mode = (window.PacState && window.PacState.mode) ? window.PacState.mode : 'play';
     window.recordHighscore(score, mode, level);

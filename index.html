@@ -1087,7 +1087,11 @@ function recordHighscore(score, mode, level) {
   const saveOn = document.getElementById('hs-save-toggle') && document.getElementById('hs-save-toggle').checked;
   if (!saveOn) return;
   const name = (document.getElementById('hs-username') && document.getElementById('hs-username').value.trim()) || 'Player';
-  submitScore(name, score, mode || 'play', level);
+  const modeKey = mode || 'play';
+  const existing = highscores.filter(s => (s.username || s.name || 'Unknown') === name && (s.mode || s.category || 'play') === modeKey);
+  const best = existing.length ? Math.max(...existing.map(s => s.score || 0)) : 0;
+  if (score <= best) return;
+  submitScore(name, score, modeKey, level);
   loadHighscoresFromRepo();
 }
 window.recordHighscore = recordHighscore;
