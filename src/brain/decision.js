@@ -1,6 +1,5 @@
 // brain/decision.js
 //
-// Rules mode: Pac-Man follows the rules the user built on the web page.
 // The page keeps them in PacState.rules (top = most important) and PacState.fallback.
 // A rule looks like: { sensor: "ghostDist", kind: "number", op: "lt", value: 0.25, action: "awayGhost" }
 //

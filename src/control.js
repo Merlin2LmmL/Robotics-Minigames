@@ -170,7 +170,7 @@ function aheadOfPacman(p, n) {
   const [dx, dy] = STEP[p.dir] ?? [0, 0];
   let tx = p.x + dx * n;
   const ty = p.y + dy * n;
-  if (p.dir === "up") tx -= n;   // overflow bug of the original
+  if (p.dir === "up") tx -= n;
   return [tx, ty];
 }
 

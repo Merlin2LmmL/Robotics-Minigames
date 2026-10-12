@@ -312,6 +312,20 @@
         <button id="btn-watch-best" type="button" disabled>Watch the best</button>
         <button id="btn-reset-brain" type="button">New random brain</button>
       </div>
+<div class="row">
+  <label for="train-view">Training view
+    <select id="train-view">
+      <option value="normal">Normal (watch closely)</option>
+      <option value="fast" selected>Fast</option>
+      <option value="turbo">Turbo (as fast as possible)</option>
+    </select>
+  </label>
+</div>
+<div class="row">
+  <button id="btn-export" type="button">Export brain</button>
+  <button id="btn-import" type="button">Import brain</button>
+  <input type="file" id="file-import" accept=".json,application/json" hidden>
+</div>
 
       <div class="stats" aria-live="polite">
         <div class="stat"><b id="stat-gen">0</b><span>Generation</span></div>
@@ -846,7 +860,7 @@
     renderInspector();
     $("btn-train").disabled = on || getNetworkConfig().inputs.length === 0;
     $("btn-stop-train").disabled = !on;
-    [popSize, mutRate, inputList, $("btn-add-layer")].forEach(el => {
+    [popSize, mutRate, inputList, $("btn-add-layer"), $("btn-import"), $("btn-reset-brain"), modeSelect].forEach(el => {
       if (el.tagName === "DIV") el.querySelectorAll("input").forEach(i => i.disabled = on);
       else el.disabled = on;
     });
@@ -867,6 +881,49 @@
     $("btn-watch-best").disabled = true;
     emit("reset-brain", { config: getNetworkConfig() });
   });
+
+// ---------- Export / import ----------
+$("btn-export").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(getNetwork())], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pacman-brain.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$("btn-import").addEventListener("click", () => $("file-import").click());
+$("file-import").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try { importBrain(JSON.parse(await file.text())); }
+  catch (err) { alert("Could not import brain: " + err.message); }
+});
+
+function importBrain(net) {
+  const { config, weights, biases } = net || {};
+  if (!config || !Array.isArray(config.inputs) || !Array.isArray(config.hidden) || !weights || !biases)
+    throw new Error("not a brain file");
+  const known = NN.inputs.map(i => i.id);
+  if (!config.inputs.length || config.inputs.some(id => !known.includes(id))) throw new Error("unknown or missing inputs");
+  if (config.hidden.length > NN.maxHiddenLayers || config.hidden.some(n => !(n >= 1 && n <= NN.maxNeuronsPerLayer)))
+    throw new Error("layer sizes out of range");
+  const sizes = [config.inputs.length, ...config.hidden, NN.outputs.length];
+  const ok = weights.length === sizes.length - 1 && biases.length === sizes.length - 1 &&
+    sizes.slice(1).every((n, l) => weights[l].length === n && biases[l].length === n && weights[l].every(r => r.length === sizes[l]));
+  if (!ok) throw new Error("weights do not match layer sizes");
+  if (!weights.flat(2).concat(biases.flat()).every(Number.isFinite)) throw new Error("invalid numbers");
+
+  const order = known.filter(id => config.inputs.includes(id));
+  const w0 = weights[0].map(row => order.map(id => row[config.inputs.indexOf(id)]));
+  state.inputs = new Set(order);
+  state.hidden = [...config.hidden];
+  inputList.querySelectorAll("input").forEach(c => c.checked = state.inputs.has(c.value));
+  networkChanged();
+  model = JSON.parse(JSON.stringify({ weights: [w0, ...weights.slice(1)], biases }));
+  renderInspector(); drawNetwork(); emitWeights();
+}
 
   // Fitness chart
   const history = [];
@@ -933,12 +990,6 @@
   };
 
   // ---------- Event listeners ----------
-  // PacState is always up to date. Read it any time from main.js:  if (PacState.running) { ... }
-  // PacHooks lets you react the moment something happens. Assign a function with the event's name:
-  //     PacHooks.reset = restartGame;
-  //     PacHooks["step-mode"] = (d) => console.log(d.enabled);
-  // The listeners live here (not in main.js) so they are already active when the page sets itself
-  // up. main.js loads later and would otherwise miss the very first events.
   const PacState = window.PacState = {
     mode: modeSelect.value,
     running: true,
@@ -990,7 +1041,7 @@
 // ---------- Highscores ----------
 let highscores = [];
 let currentFilter = 'all';
-const API = 'https://minigame-leaderboard.ortnermerlin.workers.dev';
+const API = 'https://minigame-leaderboard.ortnermerlin.workers.dev/scores';
 
 async function submitScore(name, score, mode, level) {
   await fetch(API, {

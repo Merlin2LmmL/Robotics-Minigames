@@ -133,6 +133,7 @@ function resetRound() {
 }
 
 function endGame(result) {
+  if (training.active) { game.mode = "over"; game.result = result; return; }
   game.mode = "over";
   game.result = result;
   if (result === "won") {
@@ -292,6 +293,7 @@ function onJunction(p) {
   const key = `${p.x},${p.y}`;
   if (key === lastJunction) return;   // standing still on the same junction: report it once
   lastJunction = key;
+  if (training.active && training.view !== "normal") return;
 
   if (PacState.mode !== "play" && PacState.showThinking) {
     const near = nearestGhostDistance(p);
@@ -309,7 +311,7 @@ function onJunction(p) {
   }
 
   // "Pause at each junction": stop here, the Run button continues
-  if (PacState.stepMode) PacState.running = false;
+  if (PacState.stepMode && !training.active) PacState.running = false;
 }
 
 // One tile of movement for a single sprite
@@ -340,7 +342,7 @@ function step(s) {
         if (result && result.direction) {
           s.dir = result.direction;
           lastDecision = result;
-          PacUI.setActivations(result.activations);
+          if (!(training.active && training.view !== "normal")) PacUI.setActivations(result.activations);
         }
       }
     }
@@ -504,7 +506,10 @@ function frame(now) {
   const delta = now - last;
   last = now;
 
-  if (game.mode === "over" && game.result === "won" && level < 3) {
+  if (training.active) {
+    if (PacState.running) trainFrame(delta);
+    else { draw(); drawPaused(); }
+  } else if (game.mode === "over" && game.result === "won" && level < 3) {
     game.result = null;
     game.mode = "play";
   } else if (game.mode === "over") {
@@ -529,9 +534,179 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// ---------- Controls from the page ----------
+// ---------- Training (genetic algorithm, one visible game at a time) ----------
 
-PacHooks.reset = init;
+const TRAIN_DT = 50;          // ms of game time per update in fast/turbo view
+const STALL_MS = 20000;       // end a game if no points were scored for this long
+const MAX_GAME_MS = 240000;
+
+const training = {
+  active: false, inGame: false, view: "fast",
+  pop: [], idx: 0, gen: 0, size: 60, mutation: 0.1,
+  template: null, best: null, bestFit: -Infinity,
+  lastScore: 0, lastProgress: 0,
+};
+
+const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+
+// genome = all weights and biases of the network as one flat array, layer by layer
+function flatten(net) {
+  const g = [];
+  net.weights.forEach((W, l) => { for (const row of W) g.push(...row); g.push(...net.biases[l]); });
+  return g;
+}
+function unflatten(g, tpl) {
+  let k = 0;
+  const weights = [], biases = [];
+  tpl.weights.forEach((W, l) => {
+    weights.push(W.map((row) => row.map(() => g[k++])));
+    biases.push(tpl.biases[l].map(() => g[k++]));
+  });
+  return { config: tpl.config, weights, biases };
+}
+const mutate = (g, rate, strength = 0.4) =>
+  g.map((v) => (Math.random() < rate ? Math.max(-6, Math.min(6, v + gauss() * strength)) : v));
+
+// tournament of 3 among the better half (list is sorted best-first)
+function pick(sorted) {
+  const half = Math.max(2, Math.ceil(sorted.length / 2));
+  let best = null;
+  for (let i = 0; i < 3; i++) {
+    const c = sorted[Math.floor(Math.random() * half)];
+    if (!best || c.fitness > best.fitness) best = c;
+  }
+  return best;
+}
+
+function nextGeneration() {
+  const sorted = [...training.pop].sort((a, b) => b.fitness - a.fitness);
+  const next = [{ genome: sorted[0].genome, fitness: 0 }, { genome: training.best, fitness: 0 }];
+  while (next.length < training.size) {
+    const a = pick(sorted), b = pick(sorted);
+    const child = a.genome.map((v, i) => (Math.random() < 0.5 ? v : b.genome[i]));
+    next.push({ genome: mutate(child, training.mutation), fitness: 0 });
+  }
+  return next;
+}
+
+function setNeuralMode() {
+  const sel = document.getElementById("mode-select");
+  sel.value = "neural-network";
+  sel.dispatchEvent(new Event("change"));
+}
+
+function startTraining(d) {
+  setNeuralMode();
+  training.template = PacUI.getNetwork();
+  const seed = flatten(training.template);
+  training.size = d.population;
+  training.mutation = d.mutation;
+  training.pop = Array.from({ length: training.size }, (_, i) => ({
+    genome: i === 0 ? seed : mutate(seed, Math.max(d.mutation, 0.3), 0.6),
+    fitness: 0,
+  }));
+  training.idx = 0;
+  training.gen = 0;
+  training.best = seed;
+  training.bestFit = -Infinity;
+  training.inGame = false;
+  training.active = true;
+  PacState.running = true;
+}
+
+function haltTraining() {
+  if (!training.active) return;
+  training.active = false;
+  training.inGame = false;
+  const net = unflatten(training.best, training.template);
+  PacUI.setNetwork(net);
+  PacState.network = net;
+  init();
+}
+
+function beginGame() {
+  init();
+  lives = 1;
+  PacState.running = true;
+  PacState.network = unflatten(training.pop[training.idx].genome, training.template);
+  training.lastScore = 0;
+  training.lastProgress = 0;
+  training.inGame = true;
+}
+
+function gameFinished() {
+  if (game.mode === "over") return true;
+  if (score !== training.lastScore) { training.lastScore = score; training.lastProgress = elapsed; }
+  return elapsed - training.lastProgress > STALL_MS || elapsed > MAX_GAME_MS;
+}
+
+function endTrainingGame() {
+  const won = game.result === "won";
+  training.pop[training.idx].fitness = score + (elapsed / TICK_MS) * 0.5 + (won ? 5000 : 0);
+  training.inGame = false;
+  if (++training.idx >= training.pop.length) endGeneration();
+}
+
+function endGeneration() {
+  const fits = training.pop.map((p) => p.fitness);
+  const top = training.pop.reduce((a, b) => (b.fitness > a.fitness ? b : a));
+  training.gen++;
+  if (top.fitness > training.bestFit) {
+    training.bestFit = top.fitness;
+    training.best = top.genome;
+    PacUI.setNetwork(unflatten(training.best, training.template));   // show the best brain in the diagram
+  }
+  PacUI.setTrainingStats({
+    generation: training.gen,
+    best: Math.max(...fits),
+    average: fits.reduce((a, b) => a + b, 0) / fits.length,
+  });
+  training.pop = nextGeneration();
+  training.idx = 0;
+}
+
+function trainFrame(delta) {
+  training.view = document.getElementById("train-view")?.value ?? "fast";
+  const maxUpdates = training.view === "normal" ? 1 : training.view === "fast" ? 10 : Infinity;
+  const t0 = performance.now();
+  for (let i = 0; i < maxUpdates && training.active; i++) {
+    if (!training.inGame) beginGame();
+    update(training.view === "normal" ? delta : TRAIN_DT);
+    if (gameFinished()) endTrainingGame();
+    if (training.view === "turbo" && performance.now() - t0 > 25) break;
+  }
+  draw();
+  drawTrainingHud();
+}
+
+function drawTrainingHud() {
+  ctx.save();
+  ctx.font = "bold 24px sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "bottom";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "black";
+  ctx.fillStyle = "cyan";
+  const text = `Training  gen ${training.gen + 1}  #${training.idx + 1}/${training.pop.length}  best ${Math.round(Math.max(0, training.bestFit))}`;
+  ctx.strokeText(text, 8, canvas.height - 8);
+  ctx.fillText(text, 8, canvas.height - 8);
+  ctx.restore();
+}
+
+
+// ---------- Controls from the page ----------
+PacHooks.reset = () => {
+  if (training.active) { PacUI.trainingFinished(); haltTraining(); }
+  init();
+};
+PacHooks["train-start"] = startTraining;
+PacHooks["train-stop"] = haltTraining;
+PacHooks["watch-best"] = () => {
+  if (training.active) { PacUI.trainingFinished(); haltTraining(); }
+  setNeuralMode();
+  init();
+  PacState.running = true;
+};
 
 setupKeyListener(dir);
 
