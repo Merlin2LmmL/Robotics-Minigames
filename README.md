@@ -90,4 +90,4 @@ Think you can write better rules than the author? Train a better network? Prove 
 - Thanks to Fiona and the entire team for her effort in terra for motivating me to make this project. Hope you read this!
 ---
 
-<sub>Built with curiosity, too much coffee and a mild obsession with ghost pathfinding.</sub>- 
+<sub>Built with curiosity, too much coffee and a mild obsession with ghost pathfinding.</sub>
