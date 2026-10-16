@@ -14,8 +14,8 @@ const dirState = { dir: "none" };
 
 function initialize() {
   // Initialize the robot's position and orientation
-  robot.x = WORLD_W / 2;
-  robot.y = WORLD_H / 2;
+  robot.x = map.start.x;
+  robot.y = map.start.y;
   robot.angle = 0;
 
   // Start the update loop
@@ -44,20 +44,25 @@ function update(timestamp) {
 
   updateRobot(robot, dt, keys, map.obstacles);
 
-  const scale = Math.min(canvas.width / WORLD_W, canvas.height / WORLD_H);
-  const offsetX = (canvas.width - WORLD_W * scale) / 2;
-  const offsetY = (canvas.height - WORLD_H * scale) / 2;
+  const zoom = parseFloat(document.body.dataset.zoom) || 1;
+  const s = Math.min(canvas.width / WORLD_W, canvas.height / WORLD_H) * zoom;
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#f0f0f0";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
   if (document.body.dataset.view === "robot") {
     // robot stays centered and points up; the world rotates around it
-    ctx.setTransform(scale, 0, 0, scale, canvas.width / 2, canvas.height / 2);
+    ctx.setTransform(s, 0, 0, s, canvas.width / 2, canvas.height / 2);
     ctx.rotate(-Math.PI / 2 - robot.angle);
     ctx.translate(-robot.x, -robot.y);
+  } else {
+    // camera follows the robot but stays inside the world; when the whole
+    // world fits on screen (zoom <= 1) it is simply centered
+    const hx = canvas.width / (2 * s), hy = canvas.height / (2 * s);
+    const cx = hx * 2 >= WORLD_W ? WORLD_W / 2 : Math.min(Math.max(robot.x, hx), WORLD_W - hx);
+    const cy = hy * 2 >= WORLD_H ? WORLD_H / 2 : Math.min(Math.max(robot.y, hy), WORLD_H - hy);
+    ctx.setTransform(s, 0, 0, s, canvas.width / 2 - cx * s, canvas.height / 2 - cy * s);
   }
   drawRobot(ctx, robot, scrollX, scrollY);
   if (document.body.dataset.lidar === "off") {

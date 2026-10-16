@@ -120,6 +120,9 @@
   .pad .s { grid-column: 2; grid-row: 2; }
   .pad .d { grid-column: 3; grid-row: 2; }
 
+  .zoom { display: flex; gap: 6px; }
+  .zoom button { flex: 1; }
+
   .stats { margin: 8px 0; }
   .stat { display: inline-block; margin-right: 18px; }
   .stat b { display: block; font-size: 18px; }
@@ -173,6 +176,15 @@
         <button id="view-btn" type="button">View: Robot</button>
       </div>
       <p class="hint">World keeps the map still. Robot keeps the robot still and rotates the map.</p>
+    </section>
+
+    <section class="card">
+      <h2>Zoom</h2>
+      <div class="row zoom">
+        <button id="zoom-out" type="button" aria-label="Zoom out">&minus;</button>
+        <button id="zoom-reset" type="button" aria-label="Reset zoom">100%</button>
+        <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+      </div>
     </section>
 
     <section class="card">
@@ -249,6 +261,21 @@ viewBtn.addEventListener("click", () => {
   document.body.dataset.view = robotView ? "robot" : "world";
   viewBtn.textContent = robotView ? "View: Robot" : "View: World";
 });
+
+// main.js reads document.body.dataset.zoom as a camera scale multiplier
+const ZOOM_MIN = 0.5, ZOOM_MAX = 4, ZOOM_STEP = 1.25;
+const zoomReset = document.getElementById("zoom-reset");
+function setZoom(z) {
+  z = Math.min(Math.max(z, ZOOM_MIN), ZOOM_MAX);
+  document.body.dataset.zoom = String(z);
+  zoomReset.textContent = Math.round(z * 100) + "%";
+}
+setZoom(1);
+document.getElementById("zoom-in").addEventListener("click",
+  () => setZoom(parseFloat(document.body.dataset.zoom) * ZOOM_STEP));
+document.getElementById("zoom-out").addEventListener("click",
+  () => setZoom(parseFloat(document.body.dataset.zoom) / ZOOM_STEP));
+zoomReset.addEventListener("click", () => setZoom(1));
 
 // main.js and lidar.js read document.body.dataset.lidar
 const lidarBtn = document.getElementById("lidar-btn");
