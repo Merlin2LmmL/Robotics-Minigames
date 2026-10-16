@@ -42,7 +42,7 @@ function update(timestamp) {
   const dt = Math.min((timestamp - last) / 1000, 0.05);
   last = timestamp;
 
-  updateRobot(robot, dt, keys);
+  updateRobot(robot, dt, keys, map.obstacles);
 
   const scale = Math.min(canvas.width / WORLD_W, canvas.height / WORLD_H);
   const offsetX = (canvas.width - WORLD_W * scale) / 2;
