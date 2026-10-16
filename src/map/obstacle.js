@@ -1,44 +1,68 @@
 const EPS = 1e-6;
 
-function closestOnSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const len2 = dx * dx + dy * dy;
-  let t = len2 > 0 ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0;
-  t = Math.max(0, Math.min(1, t));
-  return { x: x1 + t * dx, y: y1 + t * dy };
+function robotCorners(robot) {
+    const c = Math.cos(robot.angle), s = Math.sin(robot.angle);
+    const hw = robot.width / 2, hh = robot.height / 2;
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]
+        .map(([lx, ly]) => ({ x: robot.x + lx * c - ly * s, y: robot.y + lx * s + ly * c }));
 }
 
-function pointInPolygon(px, py, pts) {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const a = pts[i], b = pts[j];
-    if ((a.y > py) !== (b.y > py) &&
-        px < ((b.x - a.x) * (py - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
+function project(pts, ax, ay) {
+    let min = Infinity, max = -Infinity;
+    for (const p of pts) {
+        const d = p.x * ax + p.y * ay;
+        if (d < min) min = d;
+        if (d > max) max = d;
+    }
+    return [min, max];
 }
 
-// Circle (cx, cy, r) vs a closed polygon or an open polyline.
-// Returns { nx, ny, depth } where (nx, ny) points from the obstacle toward the robot.
-function circleVsPath(cx, cy, r, pts, closed) {
-  let best = null, bestD2 = Infinity;
-  const n = closed ? pts.length : pts.length - 1;
-  for (let i = 0; i < n; i++) {
-    const a = pts[i], b = pts[(i + 1) % pts.length];
-    const c = closestOnSegment(cx, cy, a.x, a.y, b.x, b.y);
-    const d2 = (cx - c.x) ** 2 + (cy - c.y) ** 2;
-    if (d2 < bestD2) { bestD2 = d2; best = c; }
-  }
-  const dist = Math.sqrt(bestD2);
-  const inside = closed && pointInPolygon(cx, cy, pts);
-  if (!inside && dist >= r) return null;
-  if (dist < EPS) return { nx: 0, ny: -1, depth: r }; // degenerate, center exactly on an edge
+function edgeNormals(pts, closed) {
+    const axes = [];
+    const n = closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (len > EPS) axes.push({ x: -(b.y - a.y) / len, y: (b.x - a.x) / len });
+    }
+    return axes;
+}
 
-  const nx = (cx - best.x) / dist, ny = (cy - best.y) / dist;
-  // center already inside: push out through the nearest edge, past it by r
-  return inside
-    ? { nx: -nx, ny: -ny, depth: dist + r }
-    : { nx, ny, depth: r - dist };
+// SAT between the robot's rotated rectangle and a convex polygon / segment / circle.
+// `other` is { pts } or { cx, cy, r }. Returns { nx, ny, depth }, normal pointing obstacle -> robot.
+// (Concave polygons are treated as convex.)
+function rectContact(robot, other) {
+    const rect = robotCorners(robot);
+    let axes = edgeNormals(rect, true).slice(0, 2);
+    let ocx, ocy;
+    if (other.pts) {
+        axes = axes.concat(edgeNormals(other.pts, other.closed));
+        ocx = other.pts.reduce((t, p) => t + p.x, 0) / other.pts.length;
+        ocy = other.pts.reduce((t, p) => t + p.y, 0) / other.pts.length;
+    } else {
+        // extra axis: from the circle center to the nearest rectangle corner
+        let best = null, bestD2 = Infinity;
+        for (const p of rect) {
+            const d2 = (p.x - other.cx) ** 2 + (p.y - other.cy) ** 2;
+            if (d2 < bestD2) { bestD2 = d2; best = p; }
+        }
+        const d = Math.sqrt(bestD2);
+        if (d > EPS) axes.push({ x: (best.x - other.cx) / d, y: (best.y - other.cy) / d });
+        ocx = other.cx; ocy = other.cy;
+    }
+
+    let depth = Infinity, nx = 0, ny = 0;
+    for (const ax of axes) {
+        const [rmin, rmax] = project(rect, ax.x, ax.y);
+        const [omin, omax] = other.pts
+            ? project(other.pts, ax.x, ax.y)
+            : (() => { const c = other.cx * ax.x + other.cy * ax.y; return [c - other.r, c + other.r]; })();
+        const overlap = Math.min(rmax - omin, omax - rmin);
+        if (overlap <= 0) return null; // separating axis
+        if (overlap < depth) { depth = overlap; nx = ax.x; ny = ax.y; }
+    }
+    if ((robot.x - ocx) * nx + (robot.y - ocy) * ny < 0) { nx = -nx; ny = -ny; }
+    return { nx, ny, depth };
 }
 
 export class Obstacle {
@@ -106,28 +130,21 @@ export class Obstacle {
     }
 
     contact(robot) {
-        const r = robot.radius ?? Math.max(robot.width, robot.height) / 2;
         switch (this.shape) {
             case "rectangle": {
-            const { x, y, width: w, height: h } = this;
-            return circleVsPath(robot.x, robot.y, r,
-                [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], true);
+                const { x, y, width: w, height: h } = this;
+                return rectContact(robot, { closed: true,
+                    pts: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }] });
             }
-            case "circle": {
-            const dx = robot.x - this.x, dy = robot.y - this.y;
-            const dist = Math.hypot(dx, dy);
-            const minDist = r + this.radius;
-            if (dist >= minDist) return null;
-            if (dist < EPS) return { nx: 0, ny: -1, depth: minDist };
-            return { nx: dx / dist, ny: dy / dist, depth: minDist - dist };
-            }
+            case "circle":
+                return rectContact(robot, { cx: this.x, cy: this.y, r: this.radius });
             case "polygon":
-            return circleVsPath(robot.x, robot.y, r, this.points, true);
+                return rectContact(robot, { pts: this.points, closed: true });
             case "line":
-            return circleVsPath(robot.x, robot.y, r,
-                [{ x: this.x1, y: this.y1 }, { x: this.x2, y: this.y2 }], false);
+                return rectContact(robot, { closed: false,
+                    pts: [{ x: this.x1, y: this.y1 }, { x: this.x2, y: this.y2 }] });
             default:
-            return null;
+                return null;
         }
     }
 

@@ -62,19 +62,59 @@
   #stage:fullscreen #fs-btn .icon-maximize { display: none; }
   #stage:fullscreen #fs-btn .icon-minimize { display: block; }
 
+  @media (max-width: 900px) {
+    #layout { flex-direction: column; }
+    #stage { width: 100%; height: auto; }
+    canvas#board { flex: none; height: auto; }
+    footer { position: static; text-align: center; padding: 10px; }
+  }
+
+  /* side menu */
+  #side-menu {
+    flex: 1;
+    min-width: 300px;
+    padding: 6px 20px 6px 6px;
+    overflow: auto;
+    height: 100vh;
+    height: 100dvh;
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 900px) {
+    #side-menu { height: auto; overflow: visible; padding: 8px; }
+  }
+
+  .card {
+    border: 1px solid black;
+    padding: 8px;
+    margin-bottom: 10px;
+  }
+
+  h2 { margin: 0 0 6px; font-size: 20px; }
+  p { margin: 0 0 8px; }
+  .hint { font-size: 13px; color: #555; }
+  .row { margin-bottom: 6px; }
+
+  .stats { margin: 8px 0; }
+  .stat { display: inline-block; margin-right: 18px; }
+  .stat b { display: block; font-size: 18px; }
+  .stat span { font-size: 12px; }
+
+  #lidar-readings {
+    margin: 0;
+    padding: 4px;
+    border: 1px solid black;
+    font-size: 13px;
+    max-height: 320px;
+    overflow: auto;
+  }
+
   footer {
     position: fixed;
     right: 8px;
     bottom: 4px;
     font-size: 12px;
     color: #666;
-  }
-
-  @media (max-width: 900px) {
-    #layout { flex-direction: column; }
-    #stage { width: 100%; height: auto; }
-    canvas#board { flex: none; height: auto; }
-    footer { position: static; text-align: center; padding: 10px; }
   }
 </style>
 </head>
@@ -98,6 +138,30 @@
 
     <canvas id="board" width="960" height="1080"></canvas>
   </div>
+
+  <!-- ===================== CONTROLS ===================== -->
+  <aside id="side-menu">
+
+    <section class="card">
+      <h2>View</h2>
+      <div class="row">
+        <button id="view-btn" type="button">View: Robot</button>
+      </div>
+      <p class="hint">World keeps the map still. Robot keeps the robot still and rotates the map.</p>
+    </section>
+
+    <section class="card">
+      <h2>Lidar sensor</h2>
+      <div class="stats" aria-live="polite">
+        <div class="stat"><b id="lidar-hits">0</b><span>rays hitting</span></div>
+        <div class="stat"><b id="lidar-nearest">-</b><span>nearest (px)</span></div>
+        <div class="stat"><b id="lidar-range">-</b><span>range (px)</span></div>
+      </div>
+      <pre id="lidar-readings"></pre>
+      <p class="hint">Angle is relative to where the robot faces. Distance is in px, "-" means nothing in range.</p>
+    </section>
+
+  </aside>
 
 </div>
 
@@ -128,6 +192,47 @@
     fsBtn.setAttribute("aria-label", label);
   });
 })();
+</script>
+
+<!-- ===================== UI: VIEW TOGGLE + LIDAR LOG ===================== -->
+<script type="module">
+import { robot } from "./src/robot.js";
+
+// main.js reads document.body.dataset.view to pick the camera
+const viewBtn = document.getElementById("view-btn");
+document.body.dataset.view = "robot"; // default, as set by the user in main.js
+viewBtn.addEventListener("click", () => {
+  const robotView = document.body.dataset.view !== "robot";
+  document.body.dataset.view = robotView ? "robot" : "world";
+  viewBtn.textContent = robotView ? "View: Robot" : "View: World";
+});
+
+const lidarEls = {
+  hits: document.getElementById("lidar-hits"),
+  nearest: document.getElementById("lidar-nearest"),
+  range: document.getElementById("lidar-range"),
+  list: document.getElementById("lidar-readings"),
+};
+
+function updateLidarPanel() {
+  const lidar = robot.sensors.find(s => s.type === "lidar");
+  if (lidar) {
+    const hits = lidar.readings.filter(r => r.distance !== null);
+    lidarEls.hits.textContent = `${hits.length}/${lidar.readings.length}`;
+    lidarEls.nearest.textContent = hits.length
+      ? Math.min(...hits.map(r => r.distance)).toFixed(1) : "-";
+    lidarEls.range.textContent = lidar.range;
+    lidarEls.list.textContent = lidar.readings.map((r, i) => {
+      let deg = ((r.angle - robot.angle) * 180 / Math.PI) % 360;
+      if (deg > 180) deg -= 360;
+      if (deg < -180) deg += 360;
+      const d = r.distance === null ? "-" : r.distance.toFixed(1);
+      return `#${String(i).padStart(2, "0")}  ${deg.toFixed(0).padStart(4)}°  ${d.padStart(6)}`;
+    }).join("\n");
+  }
+  requestAnimationFrame(updateLidarPanel);
+}
+requestAnimationFrame(updateLidarPanel);
 </script>
 
 <script type="module" src="src/main.js"></script>

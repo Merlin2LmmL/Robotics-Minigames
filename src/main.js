@@ -53,6 +53,12 @@ function update(timestamp) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+  if (document.body.dataset.view === "robot") {
+    // robot stays centered and points up; the world rotates around it
+    ctx.setTransform(scale, 0, 0, scale, canvas.width / 2, canvas.height / 2);
+    ctx.rotate(-Math.PI / 2 - robot.angle);
+    ctx.translate(-robot.x, -robot.y);
+  }
   drawRobot(ctx, robot, scrollX, scrollY);
   map.obstacles.forEach(obstacle => obstacle.draw(ctx, scrollX, scrollY));
 

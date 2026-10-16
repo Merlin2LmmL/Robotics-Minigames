@@ -1,3 +1,5 @@
+import { lidarSensor } from "./sensors/lidar.js";
+
 export const robot = {
   x: 480, y: 540, width: 40, height: 20, angle: 0,
   speed: 0, turnSpeed: 0,
@@ -9,9 +11,7 @@ export const robot = {
   turnAccel: 8,      // rad/s^2
   turnBrake: 16,     // rad/s^2
   sensors: [
-    // lidarSensor(
-    //     // Future parameters for the lidar sensor can be added here
-    // )
+    lidarSensor({ rayCount: 36, fov: Math.PI * 2, range: 250 })
   ]
 };
 
@@ -22,6 +22,7 @@ export function drawRobot(ctx, robot, scrollX, scrollY) {
   ctx.fillStyle = "blue";
   ctx.fillRect(-robot.width / 2, -robot.height / 2, robot.width, robot.height);
   ctx.restore();
+  for (const s of robot.sensors) s.draw?.(ctx, scrollX, scrollY);
 }
 
 function approach(v, target, step) {
@@ -71,4 +72,6 @@ export function updateRobot(robot, dt, keys, obstacles = []) {
     }
     if (!hit) break;
   }
+
+  for (const s of robot.sensors) s.scan?.(robot, obstacles);
 }
