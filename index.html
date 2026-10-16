@@ -95,6 +95,31 @@
   .hint { font-size: 13px; color: #555; }
   .row { margin-bottom: 6px; }
 
+  /* on-screen WASD pad */
+  .pad {
+    display: grid;
+    grid-template-columns: repeat(3, 64px);
+    grid-template-rows: repeat(2, 64px);
+    gap: 6px;
+    justify-content: center;
+    margin: 6px 0;
+  }
+  .pad button {
+    font: bold 20px Arial, Helvetica, sans-serif;
+    background: #eee;
+    border: 1px solid black;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .pad button.active { background: #bbb; }
+  .pad .w { grid-column: 2; grid-row: 1; }
+  .pad .a { grid-column: 1; grid-row: 2; }
+  .pad .s { grid-column: 2; grid-row: 2; }
+  .pad .d { grid-column: 3; grid-row: 2; }
+
   .stats { margin: 8px 0; }
   .stat { display: inline-block; margin-right: 18px; }
   .stat b { display: block; font-size: 18px; }
@@ -151,6 +176,25 @@
     </section>
 
     <section class="card">
+      <h2>Lidar</h2>
+      <div class="row">
+        <button id="lidar-btn" type="button">Lidar: On</button>
+      </div>
+      <p class="hint">On draws only the laser beams and their hit points. Off hides the beams and draws the real obstacles.</p>
+    </section>
+
+    <section class="card">
+      <h2>Drive</h2>
+      <div class="pad" aria-label="Movement buttons">
+        <button type="button" class="w" data-code="KeyW">W</button>
+        <button type="button" class="a" data-code="KeyA">A</button>
+        <button type="button" class="s" data-code="KeyS">S</button>
+        <button type="button" class="d" data-code="KeyD">D</button>
+      </div>
+      <p class="hint">Hold a button to drive. Keyboard WASD and arrow keys work too.</p>
+    </section>
+
+    <section class="card">
       <h2>Lidar sensor</h2>
       <div class="stats" aria-live="polite">
         <div class="stat"><b id="lidar-hits">0</b><span>rays hitting</span></div>
@@ -197,7 +241,6 @@
 <!-- ===================== UI: VIEW TOGGLE + LIDAR LOG ===================== -->
 <script type="module">
 import { robot } from "./src/robot.js";
-
 // main.js reads document.body.dataset.view to pick the camera
 const viewBtn = document.getElementById("view-btn");
 document.body.dataset.view = "robot"; // default, as set by the user in main.js
@@ -206,6 +249,28 @@ viewBtn.addEventListener("click", () => {
   document.body.dataset.view = robotView ? "robot" : "world";
   viewBtn.textContent = robotView ? "View: Robot" : "View: World";
 });
+
+// main.js and lidar.js read document.body.dataset.lidar
+const lidarBtn = document.getElementById("lidar-btn");
+document.body.dataset.lidar = "on";
+lidarBtn.addEventListener("click", () => {
+  const on = document.body.dataset.lidar === "off";
+  document.body.dataset.lidar = on ? "on" : "off";
+  lidarBtn.textContent = on ? "Lidar: On" : "Lidar: Off";
+});
+
+// on-screen WASD pad: fire the same key events main.js already listens for
+for (const btn of document.querySelectorAll(".pad button")) {
+  const press = down => {
+    btn.classList.toggle("active", down);
+    window.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup",
+      { code: btn.dataset.code, cancelable: true }));
+  };
+  btn.addEventListener("pointerdown", e => { btn.setPointerCapture(e.pointerId); press(true); });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"])
+    btn.addEventListener(ev, () => { if (btn.classList.contains("active")) press(false); });
+  btn.addEventListener("contextmenu", e => e.preventDefault());
+}
 
 const lidarEls = {
   hits: document.getElementById("lidar-hits"),

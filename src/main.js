@@ -60,7 +60,9 @@ function update(timestamp) {
     ctx.translate(-robot.x, -robot.y);
   }
   drawRobot(ctx, robot, scrollX, scrollY);
-  map.obstacles.forEach(obstacle => obstacle.draw(ctx, scrollX, scrollY));
+  if (document.body.dataset.lidar === "off") {
+    map.obstacles.forEach(obstacle => obstacle.draw(ctx, scrollX, scrollY));
+  }
 
   requestAnimationFrame(update);
 }

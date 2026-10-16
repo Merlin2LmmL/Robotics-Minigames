@@ -44,6 +44,11 @@ function rayObstacle(ox, oy, dx, dy, o) {
 }
 
 // offsetX/offsetY mount the sensor relative to the robot center (robot frame, +x = forward)
+// Standard normal sample (Box-Muller)
+function gaussian() {
+  return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+}
+
 export function lidarSensor({
   rayCount = 36,
   fov = Math.PI * 2,
@@ -51,10 +56,12 @@ export function lidarSensor({
   offsetX = 0,
   offsetY = 0,
   color = "rgba(255, 0, 0, 0.6)",
+  angleNoise = 0.01, // std dev of per-ray direction jitter, radians
+  rangeNoise = 1,    // std dev of per-hit distance error, world units
 } = {}) {
   return {
     type: "lidar",
-    rayCount, fov, range, offsetX, offsetY, color,
+    rayCount, fov, range, offsetX, offsetY, color, angleNoise, rangeNoise,
     // one entry per ray: { angle, distance (null = no hit), x1, y1, x2, y2 } in world coords
     readings: [],
 
@@ -68,7 +75,8 @@ export function lidarSensor({
 
       this.readings = [];
       for (let i = 0; i < this.rayCount; i++) {
-        const a = this.rayCount === 1 ? robot.angle : start + (this.fov * i) / steps;
+        const a = (this.rayCount === 1 ? robot.angle : start + (this.fov * i) / steps)
+          + gaussian() * this.angleNoise;
         const dx = Math.cos(a), dy = Math.sin(a);
         let d = this.range;
         let hit = false;
@@ -76,6 +84,7 @@ export function lidarSensor({
           const t = rayObstacle(ox, oy, dx, dy, o);
           if (t < d) { d = t; hit = true; }
         }
+        if (hit) d = Math.min(Math.max(d + gaussian() * this.rangeNoise, 0), this.range);
         this.readings.push({
           angle: a, distance: hit ? d : null,
           x1: ox, y1: oy, x2: ox + dx * d, y2: oy + dy * d,
@@ -85,6 +94,7 @@ export function lidarSensor({
     },
 
     draw(ctx, scrollX = 0, scrollY = 0) {
+      if (document.body.dataset.lidar === "off") return;
       ctx.save();
       ctx.strokeStyle = this.color;
       ctx.lineWidth = 1;
