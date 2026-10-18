@@ -1,22 +1,34 @@
 import { robot, updateRobot, drawRobot } from "./robot.js";
-import { map } from "./map/map.js";
+import { maps } from "./map/map.js";
 
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
-
-const WORLD_W = 960;
-const WORLD_H = 1080;
 
 let scrollX = 0;
 let scrollY = 0;
 
 const dirState = { dir: "none" };
 
-function initialize() {
-  // Initialize the robot's position and orientation
+// the map is picked from the UI through document.body.dataset.map
+let map = null;
+let mapKey = null;
+
+function loadMap(key) {
+  mapKey = key;
+  map = maps[key];
+
+  // put the robot at the map's start and stop it
   robot.x = map.start.x;
   robot.y = map.start.y;
-  robot.angle = 0;
+  robot.angle = map.start.angle ?? 0;
+  robot.speed = 0;
+  robot.turnSpeed = 0;
+  robot.vx = 0;
+  robot.vy = 0;
+}
+
+function initialize() {
+  loadMap(document.body.dataset.map || "maze");
 
   // Start the update loop
   requestAnimationFrame(update);
@@ -42,8 +54,12 @@ function update(timestamp) {
   const dt = Math.min((timestamp - last) / 1000, 0.05);
   last = timestamp;
 
+  const key = document.body.dataset.map || "maze";
+  if (key !== mapKey) loadMap(key);
+
   updateRobot(robot, dt, keys, map.obstacles);
 
+  const { width: WORLD_W, height: WORLD_H } = map.worldSize;
   const zoom = parseFloat(document.body.dataset.zoom) || 1;
   const s = Math.min(canvas.width / WORLD_W, canvas.height / WORLD_H) * zoom;
 
@@ -67,6 +83,8 @@ function update(timestamp) {
   drawRobot(ctx, robot, scrollX, scrollY);
   if (document.body.dataset.lidar === "off") {
     map.obstacles.forEach(obstacle => obstacle.draw(ctx, scrollX, scrollY));
+    // cosmetic outline: drawn but not in map.obstacles, so it never collides
+    (map.outline ?? []).forEach(o => o.draw(ctx, scrollX, scrollY));
   }
 
   requestAnimationFrame(update);

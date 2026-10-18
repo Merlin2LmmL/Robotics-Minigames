@@ -97,7 +97,7 @@ export class Obstacle {
     draw(ctx, scrollX = 0, scrollY = 0) {
         ctx.save();
         ctx.fillStyle = this.color;
-        ctx.strokeStyle = "rgba(255, 0, 0, 1)";
+        ctx.strokeStyle = this.outline === false ? "transparent" : "rgba(255, 0, 0, 1)";
         switch (this.shape) {
             case "rectangle":
                 ctx.fillRect(this.x + scrollX, this.y + scrollY, this.width, this.height);
