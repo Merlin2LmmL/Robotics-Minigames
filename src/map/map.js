@@ -1,5 +1,6 @@
 import { generateMaze } from "./maze.js";
 import { generateWarehouse } from "./warehouse.js";
+import { sandbox } from "./sandbox.js";
 import { map as floorplanMap, worldSize as floorplanSize, outline as floorplanOutline } from "./floorplan.js";
 
 for (const o of floorplanOutline) o.outline = false;
@@ -37,6 +38,12 @@ export const environments = [
         name: "Warehouse",
         description: "Identical shelf rows. Hard for SLAM because every aisle looks the same.",
         build: params => generateWarehouse(params),
+    },
+    {
+        id: "sandbox",
+        name: "Sandbox",
+        description: "A map of your own. Build it with the editor, or import a map file.",
+        build: () => sandbox.play(),
     },
 ];
 

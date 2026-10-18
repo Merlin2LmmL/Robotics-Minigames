@@ -1,5 +1,7 @@
 import { robot, updateRobot, drawRobot } from "./robot.js";
 import { buildMap, paramsFromQuery } from "./map/map.js";
+import { sandbox } from "./map/sandbox.js";
+import { editor } from "./editor.js";
 
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
@@ -13,20 +15,26 @@ const dirState = { dir: "none" };
 let map = null;
 let mapKey = null;
 let mapSeed = null;
+let mapEditing = false;
+
+// put the robot at the map's start and stop it
+function placeRobot(start) {
+  robot.x = start.x;
+  robot.y = start.y;
+  robot.angle = start.angle ?? 0;
+  robot.speed = 0;
+  robot.turnSpeed = 0;
+  robot.vx = 0;
+  robot.vy = 0;
+}
 
 function loadMap(key) {
   mapKey = key;
   mapSeed = document.body.dataset.seed;
   map = buildMap(key, { ...paramsFromQuery(location.search), seed: parseInt(mapSeed, 10) || 1 });
-
-  // put the robot at the map's start and stop it
-  robot.x = map.start.x;
-  robot.y = map.start.y;
-  robot.angle = map.start.angle ?? 0;
-  robot.speed = 0;
-  robot.turnSpeed = 0;
-  robot.vx = 0;
-  robot.vy = 0;
+  editor.currentMap = map;
+  editor.currentMapId = key;
+  placeRobot(map.start);
 }
 
 function initialize() {
@@ -57,12 +65,21 @@ function update(timestamp) {
   last = timestamp;
 
   const key = document.body.dataset.map || "maze";
-  if (key !== mapKey || (key === "warehouse" && document.body.dataset.seed !== mapSeed)) loadMap(key);
+  const editing = editor.active;
+  if (editing) {
+    // the design is shown frozen, with the robot parked at its start and the lidar still scanning
+    map = sandbox.design;
+    placeRobot(map.start);
+    for (const s of robot.sensors) s.scan?.(robot, map.obstacles);
+  } else {
+    if (mapEditing || key !== mapKey || (key === "warehouse" && document.body.dataset.seed !== mapSeed)) loadMap(key);
 
-  // self-moving obstacles first, then the robot
-  const world = { obstacles: map.obstacles, robot };
-  for (const o of map.obstacles) o.update(dt, world);
-  updateRobot(robot, dt, keys, map.obstacles);
+    // self-moving obstacles first, then the robot
+    const world = { obstacles: map.obstacles, robot };
+    for (const o of map.obstacles) o.update(dt, world);
+    updateRobot(robot, dt, keys, map.obstacles);
+  }
+  mapEditing = editing;
 
   const { width: WORLD_W, height: WORLD_H } = map.worldSize;
   const zoom = parseFloat(document.body.dataset.zoom) || 1;
@@ -72,7 +89,11 @@ function update(timestamp) {
   ctx.fillStyle = "#f0f0f0";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  if (document.body.dataset.view === "robot") {
+  if (editing) {
+    // editing always uses the world view, panned freely by the editor
+    const cx = WORLD_W / 2 + editor.pan.x, cy = WORLD_H / 2 + editor.pan.y;
+    ctx.setTransform(s, 0, 0, s, canvas.width / 2 - cx * s, canvas.height / 2 - cy * s);
+  } else if (document.body.dataset.view === "robot") {
     // robot stays centered and points up; the world rotates around it
     ctx.setTransform(s, 0, 0, s, canvas.width / 2, canvas.height / 2);
     ctx.rotate(-Math.PI / 2 - robot.angle);
@@ -85,16 +106,19 @@ function update(timestamp) {
     const cy = hy * 2 >= WORLD_H ? WORLD_H / 2 : Math.min(Math.max(robot.y, hy), WORLD_H - hy);
     ctx.setTransform(s, 0, 0, s, canvas.width / 2 - cx * s, canvas.height / 2 - cy * s);
   }
-  if (document.body.dataset.environment === "on") {
+  editor.view = ctx.getTransform();
+  const showEnvironment = editing || document.body.dataset.environment === "on";
+  if (showEnvironment) {
     // cosmetic floor markings: under the robot, never collided with
     (map.floor ?? []).forEach(o => o.draw(ctx, scrollX, scrollY));
   }
   drawRobot(ctx, robot, scrollX, scrollY);
-  if (document.body.dataset.environment === "on") {
+  if (showEnvironment) {
     map.obstacles.forEach(obstacle => obstacle.draw(ctx, scrollX, scrollY));
     // cosmetic outline: drawn but not in map.obstacles, so it never collides
     (map.outline ?? []).forEach(o => o.draw(ctx, scrollX, scrollY));
   }
+  if (editing) editor.draw(ctx);
 
   requestAnimationFrame(update);
 }

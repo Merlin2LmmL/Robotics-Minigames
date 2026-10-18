@@ -122,6 +122,15 @@
   .pad .s { grid-column: 2; grid-row: 2; }
   .pad .d { grid-column: 3; grid-row: 2; }
 
+  /* map editor */
+  .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tools button[aria-pressed="true"] { background: #bbb; }
+  .card input[type="number"], .card input[type="text"] { font: inherit; padding: 4px; }
+  .card input[type="number"] { width: 5em; }
+  .card input[type="text"] { width: 10em; }
+  body[data-editor="on"] canvas#board { cursor: crosshair; touch-action: none; }
+
   .zoom { display: flex; gap: 6px; }
   .zoom button { flex: 1; }
 
@@ -188,6 +197,57 @@
       <p class="hint" id="map-desc"></p>
       <label class="row" id="seed-row">Seed <input id="seed-input" type="number" min="0" step="1" value="1"></label>
       <p class="hint">Switching puts the robot back at the start.</p>
+    </section>
+
+    <section class="card">
+      <h2>Editor</h2>
+      <div class="row buttons">
+        <button id="editor-btn" type="button">Editor: Off</button>
+        <button id="editor-copy" type="button">Edit a copy of this map</button>
+      </div>
+      <div id="editor-tools" hidden>
+        <div class="row tools" role="group" aria-label="Tool">
+          <button type="button" data-tool="select">Select</button>
+          <button type="button" data-tool="rectangle">Rectangle</button>
+          <button type="button" data-tool="circle">Circle</button>
+          <button type="button" data-tool="wall">Wall</button>
+          <button type="button" data-tool="polygon">Polygon</button>
+          <button type="button" data-tool="person">Person</button>
+          <button type="button" data-tool="start">Robot start</button>
+          <button type="button" data-tool="erase">Erase</button>
+        </div>
+        <p class="hint" id="editor-hint"></p>
+        <div class="row buttons">
+          <label>Color <input id="editor-color" type="color"></label>
+          <label><input id="editor-movable" type="checkbox"> Pushable</label>
+          <button id="editor-delete" type="button">Delete</button>
+          <button id="editor-undo" type="button">Undo</button>
+        </div>
+        <div class="row buttons">
+          <label>Wall thickness <input id="editor-thickness" type="number" min="1" step="1" value="12"> px</label>
+        </div>
+        <div class="row buttons">
+          <label><input id="editor-snap" type="checkbox" checked> Snap to grid</label>
+          <label><input id="editor-grid" type="number" min="1" step="1" value="10" aria-label="Grid size"> px</label>
+        </div>
+        <div class="row buttons">
+          <label>World <input id="editor-width" type="number" min="100" step="10" aria-label="World width"></label>
+          <label>&times; <input id="editor-height" type="number" min="100" step="10" aria-label="World height"> px</label>
+        </div>
+        <div class="row buttons">
+          <button id="editor-border" type="button">Add border walls</button>
+          <button id="editor-clear" type="button">Clear</button>
+        </div>
+        <p class="hint">Color and Pushable change the selected shape, or the next one drawn when nothing is selected. Only rectangles and circles can be pushed. Delete removes the selection, Ctrl+Z undoes, the mouse wheel zooms and right-drag pans.</p>
+      </div>
+      <div class="row buttons">
+        <label>Name <input id="editor-name" type="text" spellcheck="false"></label>
+        <button id="editor-export" type="button">Export</button>
+        <button id="editor-import" type="button">Import</button>
+        <input id="editor-file" type="file" accept=".json,application/json" hidden>
+      </div>
+      <p class="hint" id="editor-status" aria-live="polite"></p>
+      <p class="hint">Turn the editor off to drive the sandbox map. Maps are saved in this browser and can be exported as .json files; importing one loads it into the sandbox.</p>
     </section>
 
     <section class="card">

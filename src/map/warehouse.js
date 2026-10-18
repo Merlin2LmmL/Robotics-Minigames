@@ -1,5 +1,5 @@
 import { Obstacle } from "./obstacle.js";
-import { patrol } from "./movers.js";
+import { setPatrol } from "./sandbox.js";
 import { robot as defaultRobot } from "../robot.js";
 
 export const SCALE = 40;
@@ -201,7 +201,7 @@ export function generateWarehouse({
         const w = new Obstacle("circle", "rgba(230, 120, 60, 0.9)",
             pts[0].x + (pts[1].x - pts[0].x) * a, pts[0].y + (pts[1].y - pts[0].y) * a, 0.3 * SCALE);
         w.outline = false;
-        w.behavior = patrol(pts, 0.9 * SCALE, 1);
+        setPatrol(w, pts, 0.9 * SCALE, 1);
         obstacles.push(w);
     }
 
