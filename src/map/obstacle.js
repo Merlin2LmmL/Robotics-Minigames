@@ -69,6 +69,12 @@ export class Obstacle {
     constructor(shape, color = "rgba(255, 0, 0, 0.5)", ...args) {
         this.shape = shape;
         this.color = color;
+        // movable: the robot can push it (as long as nothing static is in the way).
+        // behavior(self, dt, world): optional per-frame hook for self-moving things
+        // (people, animals, forklifts); see movers.js. world = { obstacles, robot }.
+        this.movable = false;
+        this.pushResistance = 0.5; // 0..1, how much pushing it slows the robot
+        this.behavior = null;
         switch (shape) {
             case "rectangle":
                 this.x = args[0];
@@ -149,4 +155,38 @@ export class Obstacle {
     }
 
     checkCollision(robot) { return this.contact(robot) !== null; }
+
+    translate(dx, dy) {
+        switch (this.shape) {
+            case "polygon": for (const p of this.points) { p.x += dx; p.y += dy; } break;
+            case "line": this.x1 += dx; this.x2 += dx; this.y1 += dy; this.y2 += dy; break;
+            default: this.x += dx; this.y += dy;
+        }
+    }
+
+    // Axis-aligned rectangle standing in for this obstacle when it is tested against others
+    // (a circle is approximated by its bounding square).
+    probe() {
+        switch (this.shape) {
+            case "rectangle":
+                return { x: this.x + this.width / 2, y: this.y + this.height / 2, angle: 0, width: this.width, height: this.height };
+            case "circle":
+                return { x: this.x, y: this.y, angle: 0, width: 2 * this.radius, height: 2 * this.radius };
+            default: return null; // polygons / lines can't be moved by pushing
+        }
+    }
+
+    // Move by (dx, dy) unless that would overlap one of `blockers` (or the optional `robot`).
+    // Returns true if it moved.
+    tryMove(dx, dy, blockers, robot = null) {
+        this.translate(dx, dy);
+        const pr = this.probe();
+        if ((pr && blockers.some(b => b !== this && b.contact(pr))) || (robot && this.contact(robot))) {
+            this.translate(-dx, -dy);
+            return false;
+        }
+        return true;
+    }
+
+    update(dt, world) { this.behavior?.(this, dt, world); }
 }

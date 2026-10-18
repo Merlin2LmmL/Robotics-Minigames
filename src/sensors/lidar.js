@@ -94,7 +94,6 @@ export function lidarSensor({
     },
 
     draw(ctx, scrollX = 0, scrollY = 0) {
-      if (document.body.dataset.lidar === "off") return;
       ctx.save();
       ctx.strokeStyle = this.color;
       ctx.lineWidth = 1;

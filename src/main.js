@@ -1,5 +1,5 @@
 import { robot, updateRobot, drawRobot } from "./robot.js";
-import { maps } from "./map/map.js";
+import { buildMap, paramsFromQuery } from "./map/map.js";
 
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
@@ -12,10 +12,12 @@ const dirState = { dir: "none" };
 // the map is picked from the UI through document.body.dataset.map
 let map = null;
 let mapKey = null;
+let mapSeed = null;
 
 function loadMap(key) {
   mapKey = key;
-  map = maps[key];
+  mapSeed = document.body.dataset.seed;
+  map = buildMap(key, { ...paramsFromQuery(location.search), seed: parseInt(mapSeed, 10) || 1 });
 
   // put the robot at the map's start and stop it
   robot.x = map.start.x;
@@ -55,8 +57,11 @@ function update(timestamp) {
   last = timestamp;
 
   const key = document.body.dataset.map || "maze";
-  if (key !== mapKey) loadMap(key);
+  if (key !== mapKey || (key === "warehouse" && document.body.dataset.seed !== mapSeed)) loadMap(key);
 
+  // self-moving obstacles first, then the robot
+  const world = { obstacles: map.obstacles, robot };
+  for (const o of map.obstacles) o.update(dt, world);
   updateRobot(robot, dt, keys, map.obstacles);
 
   const { width: WORLD_W, height: WORLD_H } = map.worldSize;
@@ -80,8 +85,12 @@ function update(timestamp) {
     const cy = hy * 2 >= WORLD_H ? WORLD_H / 2 : Math.min(Math.max(robot.y, hy), WORLD_H - hy);
     ctx.setTransform(s, 0, 0, s, canvas.width / 2 - cx * s, canvas.height / 2 - cy * s);
   }
+  if (document.body.dataset.environment === "on") {
+    // cosmetic floor markings: under the robot, never collided with
+    (map.floor ?? []).forEach(o => o.draw(ctx, scrollX, scrollY));
+  }
   drawRobot(ctx, robot, scrollX, scrollY);
-  if (document.body.dataset.lidar === "off") {
+  if (document.body.dataset.environment === "on") {
     map.obstacles.forEach(obstacle => obstacle.draw(ctx, scrollX, scrollY));
     // cosmetic outline: drawn but not in map.obstacles, so it never collides
     (map.outline ?? []).forEach(o => o.draw(ctx, scrollX, scrollY));

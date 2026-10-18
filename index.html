@@ -94,6 +94,8 @@
   p { margin: 0 0 8px; }
   .hint { font-size: 13px; color: #555; }
   .row { margin-bottom: 6px; }
+  #map-select, #seed-input { font: inherit; padding: 4px; }
+  #seed-input { width: 8em; }
 
   /* on-screen WASD pad */
   .pad {
@@ -181,9 +183,11 @@
     <section class="card">
       <h2>Map</h2>
       <div class="row">
-        <button id="map-btn" type="button">Map: Maze</button>
+        <select id="map-select" aria-label="Map"></select>
       </div>
-      <p class="hint">Maze is a random perfect maze. Floorplan is a fixed map of rooms and walls. Switching puts the robot back at the start.</p>
+      <p class="hint" id="map-desc"></p>
+      <label class="row" id="seed-row">Seed <input id="seed-input" type="number" min="0" step="1" value="1"></label>
+      <p class="hint">Switching puts the robot back at the start.</p>
     </section>
 
     <section class="card">
@@ -196,11 +200,11 @@
     </section>
 
     <section class="card">
-      <h2>Lidar</h2>
+      <h2>Environment</h2>
       <div class="row">
-        <button id="lidar-btn" type="button">Lidar: On</button>
+        <button id="environment-btn" type="button">Environment: On</button>
       </div>
-      <p class="hint">On draws only the laser beams and their hit points. Off hides the beams and draws the real obstacles.</p>
+      <p class="hint">On draws the walls and obstacles. Off hides them, leaving only the lidar beams and their hit points.</p>
     </section>
 
     <section class="card">
@@ -261,6 +265,7 @@
 <!-- ===================== UI: VIEW TOGGLE + LIDAR LOG ===================== -->
 <script type="module">
 import { robot } from "./src/robot.js";
+import { environments } from "./src/map/map.js";
 // main.js reads document.body.dataset.view to pick the camera
 const viewBtn = document.getElementById("view-btn");
 document.body.dataset.view = "robot"; // default, as set by the user in main.js
@@ -271,14 +276,27 @@ viewBtn.addEventListener("click", () => {
 });
 
 // main.js reads document.body.dataset.map and reloads the robot when it changes
-const MAP_LABELS = { maze: "Map: Maze", floorplan: "Map: Floorplan" };
-const mapBtn = document.getElementById("map-btn");
-document.body.dataset.map = "maze";
-mapBtn.addEventListener("click", () => {
-  const next = document.body.dataset.map === "maze" ? "floorplan" : "maze";
-  document.body.dataset.map = next;
-  mapBtn.textContent = MAP_LABELS[next];
+const mapSelect = document.getElementById("map-select");
+const mapDesc = document.getElementById("map-desc");
+const seedRow = document.getElementById("seed-row");
+const seedInput = document.getElementById("seed-input");
+document.body.dataset.seed = seedInput.value;
+seedInput.addEventListener("input", () => {
+  document.body.dataset.seed = String(Math.max(0, parseInt(seedInput.value, 10) || 0));
 });
+for (const e of environments) mapSelect.add(new Option(e.name, e.id));
+const urlMap = new URLSearchParams(location.search).get("map");
+document.body.dataset.map = environments.some(e => e.id === urlMap) ? urlMap : "maze";
+function syncMapUi() {
+  mapSelect.value = document.body.dataset.map;
+  seedRow.hidden = mapSelect.value !== "warehouse";
+  mapDesc.textContent = environments.find(e => e.id === mapSelect.value).description;
+}
+mapSelect.addEventListener("change", () => {
+  document.body.dataset.map = mapSelect.value;
+  syncMapUi();
+});
+syncMapUi();
 
 // main.js reads document.body.dataset.zoom as a camera scale multiplier
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4, ZOOM_STEP = 1.25;
@@ -295,13 +313,13 @@ document.getElementById("zoom-out").addEventListener("click",
   () => setZoom(parseFloat(document.body.dataset.zoom) / ZOOM_STEP));
 zoomReset.addEventListener("click", () => setZoom(1));
 
-// main.js and lidar.js read document.body.dataset.lidar
-const lidarBtn = document.getElementById("lidar-btn");
-document.body.dataset.lidar = "on";
-lidarBtn.addEventListener("click", () => {
-  const on = document.body.dataset.lidar === "off";
-  document.body.dataset.lidar = on ? "on" : "off";
-  lidarBtn.textContent = on ? "Lidar: On" : "Lidar: Off";
+// main.js reads document.body.dataset.environment to decide whether to draw the map
+const environmentBtn = document.getElementById("environment-btn");
+document.body.dataset.environment = "on";
+environmentBtn.addEventListener("click", () => {
+  const on = document.body.dataset.environment === "off";
+  document.body.dataset.environment = on ? "on" : "off";
+  environmentBtn.textContent = on ? "Environment: On" : "Environment: Off";
 });
 
 // on-screen WASD pad: fire the same key events main.js already listens for
