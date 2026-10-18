@@ -41,7 +41,28 @@ Then open <http://localhost:8000>. In VS Code, the `serve` task does the same.
 The warehouse also takes URL parameters, for example:
 
 ```
-?map=warehouse&rowCount=5&aisleWidth=2.
+?map=warehouse&rowCount=5&aisleWidth=2.5&workerCount=1&spawn=10,20,0
+```
+
+Also supported: `rowLength`, `shelfUnitLength` and `clutterAmount`.
+
+## Map file format
+
+Exported maps are plain JSON. Units are pixels.
+
+```json
+{
+  "format": "lidar-sim-map",
+  "version": 1,
+  "name": "my map",
+  "worldSize": { "width": 960, "height": 1080 },
+  "start": { "x": 480, "y": 540, "angle": -1.5708 },
+  "obstacles": [
+    { "shape": "rectangle", "color": "rgba(90, 90, 90, 0.8)", "x": 100, "y": 100, "width": 200, "height": 40, "movable": true },
+    { "shape": "circle", "color": "rgba(230, 120, 60, 0.9)", "x": 300, "y": 600, "radius": 12,
+      "patrol": { "waypoints": [{ "x": 300, "y": 600 }, { "x": 700, "y": 600 }], "speed": 36 } }
+  ]
+}
 ```
 
 Supported shapes are `rectangle`, `circle`, `polygon` (`points`) and `line` (`x1`, `y1`, `x2`, `y2`).
