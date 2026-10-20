@@ -1,17 +1,28 @@
 import { lidarSensor } from "./sensors/lidar.js";
+import { imuSensor, odometrySensor } from "./sensors/imu.js";
+
+// Physical size and limits in meters and seconds. setRobotScale turns them into the
+// world px values the simulation uses, so the robot is the same real size on every map.
+export const ROBOT_SPEC = {
+  length: 1.0,     // m, along the heading
+  width: 0.5,      // m
+  maxSpeed: 5,     // m/s forward
+  maxReverse: 2,   // m/s backward
+  accel: 6.25,     // m/s^2 when speeding up
+  brake: 12.5,     // m/s^2 when released or opposed
+};
 
 export const robot = {
-  x: 480, y: 540, width: 40, height: 20, angle: 0,
+  x: 480, y: 540, angle: 0,
   speed: 0, turnSpeed: 0,
-  maxSpeed: 200,     // px/s forward
-  maxReverse: 80,    // px/s backward
-  accel: 250,        // px/s^2 when speeding up
-  brake: 500,        // px/s^2 when released or opposed
+  scale: 0,          // world px per meter, set by setRobotScale
   maxTurnSpeed: 2.5, // rad/s
   turnAccel: 8,      // rad/s^2
   turnBrake: 16,     // rad/s^2
   sensors: [
-    lidarSensor({ rayCount: 36, fov: Math.PI * 2, range: 250 })
+    lidarSensor({ rayCount: 36, fov: Math.PI * 2, range: 6.25 }),
+    imuSensor(),
+    odometrySensor(),
   ],
   // googly pupils: offset from the eye centre (robot frame) and their velocity,
   // each with its own spring so the two eyes don't move in lockstep
@@ -19,15 +30,31 @@ export const robot = {
     { x: 0, y: 0, vx: 0, vy: 0, k: 110 },
     { x: 0, y: 0, vx: 0, vy: 0, k: 135 },
   ],
-  vx: 0, vy: 0, // measured world velocity, used to derive acceleration for the eyes
+  vx: 0, vy: 0, // measured world velocity, px/s
+  bodyAccel: { x: 0, y: 0 }, // true acceleration in the robot frame (x forward, y right), m/s^2
 };
 
+export function setRobotScale(robot, scale) {
+  if (robot.scale === scale) return;
+  robot.scale = scale;
+  robot.width = ROBOT_SPEC.length * scale;
+  robot.height = ROBOT_SPEC.width * scale;
+  robot.maxSpeed = ROBOT_SPEC.maxSpeed * scale;
+  robot.maxReverse = ROBOT_SPEC.maxReverse * scale;
+  robot.accel = ROBOT_SPEC.accel * scale;
+  robot.brake = ROBOT_SPEC.brake * scale;
+  for (const s of robot.sensors) s.setScale?.(scale);
+}
+
+// The face is drawn in its own units, FACE_SCALE per meter, then scaled to the map.
+const FACE_SCALE = 40;
+const BODY_W = ROBOT_SPEC.length * FACE_SCALE, BODY_H = ROBOT_SPEC.width * FACE_SCALE;
 const EYE_R = 6.5, PUPIL_R = 3.6;
 const PUPIL_FREE = EYE_R - PUPIL_R; // how far a pupil can travel from the eye centre
 const PUPIL_DAMPING = 3;            // 1/s
 const PUPIL_KICK = 0.7;             // pupil acceleration per unit of robot acceleration
 const PUPIL_BOUNCE = 0.5;           // restitution when a pupil hits the eye rim
-const MAX_ACCEL = 3000;             // px/s^2, caps impact spikes
+const MAX_ACCEL = 3000;             // face units/s^2, caps impact spikes
 
 // Pupils are loose in the eye: they lag behind when the robot accelerates, swing
 // outward in turns, and slosh around after a hit. (ax, ay) is the robot's
@@ -56,7 +83,7 @@ function updateEyes(robot, dt, ax, ay) {
 // Cute face on the front of the robot (+x is forward): big googly eyes with sparkles,
 // blush cheeks and a little smile. Pupil positions come from updateEyes.
 function drawFace(ctx, robot) {
-  const ex = robot.width / 2 - 11;
+  const ex = BODY_W / 2 - 11;
 
   // blush cheeks
   ctx.fillStyle = "rgba(255, 120, 150, 0.55)";
@@ -104,11 +131,12 @@ export function drawRobot(ctx, robot, scrollX, scrollY) {
   ctx.save();
   ctx.translate(robot.x + scrollX, robot.y + scrollY);
   ctx.rotate(robot.angle);
+  ctx.scale(robot.scale / FACE_SCALE, robot.scale / FACE_SCALE);
   ctx.fillStyle = "#7fd0ff";
   ctx.strokeStyle = "#2a6a9a";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(-robot.width / 2, -robot.height / 2, robot.width, robot.height, 7);
+  ctx.roundRect(-BODY_W / 2, -BODY_H / 2, BODY_W, BODY_H, 7);
   ctx.fill();
   ctx.stroke();
   drawFace(ctx, robot);
@@ -179,13 +207,16 @@ export function updateRobot(robot, dt, keys, obstacles = []) {
   // acceleration from the motion that actually happened (so wall hits count), in the robot frame
   if (dt > 0) {
     const vx = (robot.x - x0) / dt, vy = (robot.y - y0) / dt;
-    let ax = (vx - robot.vx) / dt, ay = (vy - robot.vy) / dt;
+    const wx = (vx - robot.vx) / dt / robot.scale, wy = (vy - robot.vy) / dt / robot.scale; // m/s^2
     robot.vx = vx; robot.vy = vy;
+    const c = Math.cos(robot.angle), sn = Math.sin(robot.angle);
+    robot.bodyAccel = { x: wx * c + wy * sn, y: -wx * sn + wy * c };
+
+    let ax = robot.bodyAccel.x * FACE_SCALE, ay = robot.bodyAccel.y * FACE_SCALE;
     const mag = Math.hypot(ax, ay);
     if (mag > MAX_ACCEL) { ax *= MAX_ACCEL / mag; ay *= MAX_ACCEL / mag; }
-    const c = Math.cos(robot.angle), sn = Math.sin(robot.angle);
-    updateEyes(robot, dt, ax * c + ay * sn, -ax * sn + ay * c);
+    updateEyes(robot, dt, ax, ay);
   }
 
-  for (const s of robot.sensors) s.scan?.(robot, obstacles);
-}
+  for (const s of robot.sensors) s.scan?.(robot, obstacles, dt);
+  }

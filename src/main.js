@@ -1,6 +1,7 @@
-import { robot, updateRobot, drawRobot } from "./robot.js";
+import { robot, updateRobot, drawRobot, setRobotScale } from "./robot.js";
+import { deadReckoning } from "./deadReckoning.js";
 import { buildMap, paramsFromQuery } from "./map/map.js";
-import { sandbox } from "./map/sandbox.js";
+import { sandbox, DEFAULT_SCALE } from "./map/sandbox.js";
 import { editor } from "./editor.js";
 
 const canvas = document.getElementById("board");
@@ -8,8 +9,6 @@ const ctx = canvas.getContext("2d");
 
 let scrollX = 0;
 let scrollY = 0;
-
-const dirState = { dir: "none" };
 
 // the map is picked from the UI through document.body.dataset.map
 let map = null;
@@ -26,6 +25,7 @@ function placeRobot(start) {
   robot.turnSpeed = 0;
   robot.vx = 0;
   robot.vy = 0;
+  robot.bodyAccel = { x: 0, y: 0 };
 }
 
 function loadMap(key) {
@@ -34,7 +34,11 @@ function loadMap(key) {
   map = buildMap(key, { ...paramsFromQuery(location.search), seed: parseInt(mapSeed, 10) || 1 });
   editor.currentMap = map;
   editor.currentMapId = key;
+  setRobotScale(robot, map.scale ?? DEFAULT_SCALE);
   placeRobot(map.start);
+  // a fresh start powers the sensors up again with new biases
+  for (const s of robot.sensors) s.reset?.();
+  deadReckoning.reset(map.start);
 }
 
 function initialize() {
@@ -69,7 +73,9 @@ function update(timestamp) {
   if (editing) {
     // the design is shown frozen, with the robot parked at its start and the lidar still scanning
     map = sandbox.design;
+    setRobotScale(robot, map.scale ?? DEFAULT_SCALE);
     placeRobot(map.start);
+    deadReckoning.reset(map.start);
     for (const s of robot.sensors) s.scan?.(robot, map.obstacles);
   } else {
     if (mapEditing || key !== mapKey || (key === "warehouse" && document.body.dataset.seed !== mapSeed)) loadMap(key);
@@ -78,6 +84,7 @@ function update(timestamp) {
     const world = { obstacles: map.obstacles, robot };
     for (const o of map.obstacles) o.update(dt, world);
     updateRobot(robot, dt, keys, map.obstacles);
+    deadReckoning.step(robot, dt);
   }
   mapEditing = editing;
 
@@ -118,6 +125,7 @@ function update(timestamp) {
     // cosmetic outline: drawn but not in map.obstacles, so it never collides
     (map.outline ?? []).forEach(o => o.draw(ctx, scrollX, scrollY));
   }
+  if (!editing && document.body.dataset.deadReckoning === "on") deadReckoning.draw(ctx, robot);
   if (editing) editor.draw(ctx);
 
   requestAnimationFrame(update);

@@ -7,7 +7,10 @@ A browser-based simulation of a LiDAR-equipped robot. Drive it around, watch the
 ## Features
 
 - **Robot driving** with smooth acceleration and braking, and collision handling that slides along walls instead of getting stuck in them.
-- **LiDAR sensor:** 36 rays in a full circle, with a little angle and distance noise because real sensors aren't perfect either. Every reading is shown live in the side panel.
+- **Real-world units:** every map knows how many pixels make a meter, so the robot (1 × 0.5 m) and its sensors are the same size everywhere.
+- **LiDAR sensor:** 36 rays in a full circle with a 6.25 m range, plus a little angle and distance noise because real sensors aren't perfect either. Every reading is shown live in the side panel.
+- **IMU and wheel odometry:** an accelerometer and gyroscope that measure acceleration and turn rate (not velocity, just like the real thing), and wheel encoders that report forward speed. All of them come with noise and a small bias.
+- **Dead reckoning:** a purple outline shows where the robot *thinks* it is using only the gyro and wheels. It drifts. That's the point.
 - **Two camera modes:** *World* keeps the map still; *Robot* keeps the robot still and turns the world around it.
 - **Environment toggle:** hide all walls and obstacles and drive using only the lidar hits, just like the robot does.
 - **Maps**
@@ -48,7 +51,7 @@ Also supported: `rowLength`, `shelfUnitLength` and `clutterAmount`.
 
 ## Map file format
 
-Exported maps are plain JSON. Units are pixels.
+Exported maps are plain JSON. Coordinates are in pixels; `scale` says how many pixels make a meter (default 40).
 
 ```json
 {
@@ -56,6 +59,7 @@ Exported maps are plain JSON. Units are pixels.
   "version": 1,
   "name": "my map",
   "worldSize": { "width": 960, "height": 1080 },
+  "scale": 40,
   "start": { "x": 480, "y": 540, "angle": -1.5708 },
   "obstacles": [
     { "shape": "rectangle", "color": "rgba(90, 90, 90, 0.8)", "x": 100, "y": 100, "width": 200, "height": 40, "movable": true },
@@ -82,6 +86,8 @@ src/main.js           game loop and camera
 src/robot.js          robot movement, collision response and the face
 src/editor.js         map editor
 src/sensors/lidar.js  ray casting and noise
+src/sensors/imu.js    IMU and wheel odometry
+src/deadReckoning.js  pose estimate from gyro and wheels
 src/map/              maps, obstacles, movers and the map file format
 ```
 

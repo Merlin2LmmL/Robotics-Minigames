@@ -235,6 +235,9 @@
           <label>&times; <input id="editor-height" type="number" min="100" step="10" aria-label="World height"> px</label>
         </div>
         <div class="row buttons">
+          <label>Scale <input id="editor-scale" type="number" min="1" step="1" aria-label="Pixels per meter"> px per meter</label>
+        </div>
+        <div class="row buttons">
           <button id="editor-border" type="button">Add border walls</button>
           <button id="editor-clear" type="button">Clear</button>
         </div>
@@ -282,11 +285,29 @@
       <h2>Lidar sensor</h2>
       <div class="stats" aria-live="polite">
         <div class="stat"><b id="lidar-hits">0</b><span>rays hitting</span></div>
-        <div class="stat"><b id="lidar-nearest">-</b><span>nearest (px)</span></div>
-        <div class="stat"><b id="lidar-range">-</b><span>range (px)</span></div>
+        <div class="stat"><b id="lidar-nearest">-</b><span>nearest (m)</span></div>
+        <div class="stat"><b id="lidar-range">-</b><span>range (m)</span></div>
       </div>
       <pre id="lidar-readings"></pre>
-      <p class="hint">Angle is relative to where the robot faces. Distance is in px, "-" means nothing in range.</p>
+      <p class="hint">Angle is relative to where the robot faces. Distance is in meters, "-" means nothing in range.</p>
+    </section>
+
+    <section class="card">
+      <h2>IMU and odometry</h2>
+      <div class="stats" aria-live="off">
+        <div class="stat"><b id="imu-ax">-</b><span>forward accel (m/s²)</span></div>
+        <div class="stat"><b id="imu-ay">-</b><span>sideways accel (m/s²)</span></div>
+        <div class="stat"><b id="imu-wz">-</b><span>turn rate (°/s)</span></div>
+        <div class="stat"><b id="odo-v">-</b><span>wheel speed (m/s)</span></div>
+      </div>
+      <div class="row buttons">
+        <button id="dr-btn" type="button">Dead reckoning: On</button>
+        <button id="dr-reset" type="button">Reset estimate</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="dr-error">-</b><span>estimate is off by (m)</span></div>
+      </div>
+      <p class="hint">The IMU measures acceleration (right is positive sideways) and turn rate, both with noise and a small constant bias; the wheels report forward speed with noise and a small wheel size error. The purple outline is where the robot would think it is using only the gyro and the wheels, and it drifts further from the truth the longer you drive.</p>
     </section>
 
   </aside>
@@ -325,10 +346,11 @@
 <!-- ===================== UI: VIEW TOGGLE + LIDAR LOG ===================== -->
 <script type="module">
 import { robot } from "./src/robot.js";
+import { deadReckoning } from "./src/deadReckoning.js";
 import { environments } from "./src/map/map.js";
 // main.js reads document.body.dataset.view to pick the camera
 const viewBtn = document.getElementById("view-btn");
-document.body.dataset.view = "robot"; // default, as set by the user in main.js
+document.body.dataset.view = "robot";
 viewBtn.addEventListener("click", () => {
   const robotView = document.body.dataset.view !== "robot";
   document.body.dataset.view = robotView ? "robot" : "world";
@@ -395,6 +417,25 @@ for (const btn of document.querySelectorAll(".pad button")) {
   btn.addEventListener("contextmenu", e => e.preventDefault());
 }
 
+// main.js reads document.body.dataset.deadReckoning to decide whether to draw the estimate
+const drBtn = document.getElementById("dr-btn");
+document.body.dataset.deadReckoning = "on";
+drBtn.addEventListener("click", () => {
+  const on = document.body.dataset.deadReckoning === "off";
+  document.body.dataset.deadReckoning = on ? "on" : "off";
+  drBtn.textContent = on ? "Dead reckoning: On" : "Dead reckoning: Off";
+});
+document.getElementById("dr-reset").addEventListener("click",
+  () => deadReckoning.reset({ x: robot.x, y: robot.y, angle: robot.angle }));
+
+const imuEls = {
+  ax: document.getElementById("imu-ax"),
+  ay: document.getElementById("imu-ay"),
+  wz: document.getElementById("imu-wz"),
+  v: document.getElementById("odo-v"),
+  error: document.getElementById("dr-error"),
+};
+
 const lidarEls = {
   hits: document.getElementById("lidar-hits"),
   nearest: document.getElementById("lidar-nearest"),
@@ -408,16 +449,25 @@ function updateLidarPanel() {
     const hits = lidar.readings.filter(r => r.distance !== null);
     lidarEls.hits.textContent = `${hits.length}/${lidar.readings.length}`;
     lidarEls.nearest.textContent = hits.length
-      ? Math.min(...hits.map(r => r.distance)).toFixed(1) : "-";
-    lidarEls.range.textContent = lidar.range;
+      ? (Math.min(...hits.map(r => r.distance)) / lidar.scale).toFixed(2) : "-";
+    lidarEls.range.textContent = lidar.spec.range;
     lidarEls.list.textContent = lidar.readings.map((r, i) => {
       let deg = ((r.angle - robot.angle) * 180 / Math.PI) % 360;
       if (deg > 180) deg -= 360;
       if (deg < -180) deg += 360;
-      const d = r.distance === null ? "-" : r.distance.toFixed(1);
+      const d = r.distance === null ? "-" : (r.distance / lidar.scale).toFixed(2);
       return `#${String(i).padStart(2, "0")}  ${deg.toFixed(0).padStart(4)}°  ${d.padStart(6)}`;
     }).join("\n");
   }
+  const imu = robot.sensors.find(s => s.type === "imu");
+  const odo = robot.sensors.find(s => s.type === "odometry");
+  if (imu) {
+    imuEls.ax.textContent = imu.reading.ax.toFixed(2);
+    imuEls.ay.textContent = imu.reading.ay.toFixed(2);
+    imuEls.wz.textContent = (imu.reading.wz * 180 / Math.PI).toFixed(1);
+  }
+  if (odo) imuEls.v.textContent = odo.reading.v.toFixed(2);
+  imuEls.error.textContent = deadReckoning.error(robot).toFixed(2);
   requestAnimationFrame(updateLidarPanel);
 }
 requestAnimationFrame(updateLidarPanel);

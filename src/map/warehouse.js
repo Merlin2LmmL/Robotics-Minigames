@@ -1,6 +1,6 @@
 import { Obstacle } from "./obstacle.js";
 import { setPatrol } from "./sandbox.js";
-import { robot as defaultRobot } from "../robot.js";
+import { ROBOT_SPEC } from "../robot.js";
 
 export const SCALE = 40;
 export const WALL_THICKNESS = 0.3;
@@ -38,13 +38,13 @@ export function generateWarehouse({
     spawn = null,        // { x, y, angle } in meters inside the room; default is by the dock
     roomWidth = 40,
     roomHeight = 25,
-    robot = defaultRobot,
+    robotSize = ROBOT_SPEC, // { length, width } in meters
 } = {}) {
     const warnings = [];
     const warn = msg => { warnings.push(msg); console.warn("[warehouse] " + msg); };
 
     // ---- aisle width check: every aisle must fit 2 robot diameters ----
-    const diameter = Math.hypot(robot.width, robot.height) / SCALE; // circumscribed circle, m
+    const diameter = Math.hypot(robotSize.length, robotSize.width); // circumscribed circle, m
     const minAisle = 2 * diameter;
     if (aisleWidth < minAisle) {
         warn(`aisleWidth ${aisleWidth} m is below 2 robot diameters; clamped to ${minAisle.toFixed(2)} m`);
@@ -148,7 +148,8 @@ export function generateWarehouse({
     // ---- default spawn: east cross aisle, just north of the dock ----
     const defaultSpawn = { x: roomWidth - (roomWidth - rowLength) / 4, y: blockBottom - 1, angle: -Math.PI / 2 };
     const spawnClear = s => {
-        const probe = { x: px(s.x), y: px(s.y), angle: s.angle ?? 0, width: robot.width, height: robot.height };
+        const probe = { x: px(s.x), y: px(s.y), angle: s.angle ?? 0,
+            width: robotSize.length * SCALE, height: robotSize.width * SCALE };
         return s.x > 0 && s.y > 0 && s.x < roomWidth && s.y < roomHeight
             && !obstacles.some(o => o.checkCollision(probe));
     };
@@ -213,6 +214,7 @@ export function generateWarehouse({
         obstacles,
         start: { x: px(start.x), y: px(start.y), angle: start.angle },
         worldSize,
+        scale: SCALE,
         floor,
         outline: overlay,
         warnings,

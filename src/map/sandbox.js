@@ -2,10 +2,11 @@ import { Obstacle } from "./obstacle.js";
 import { patrol } from "./movers.js";
 
 // Map file format: plain JSON, shared by import, export and the localStorage autosave.
-// { format, version, name, worldSize: {width, height}, start: {x, y, angle},
+// { format, version, name, worldSize: {width, height}, scale, start: {x, y, angle},
 //   obstacles: [...], floor?: [...], overlay?: [...] }
 // Each obstacle: { shape, color, <geometry>, movable?, pushResistance?, outline?,
-//   patrol?: { waypoints: [{x, y}], speed, startAt } }. Units are world px.
+//   patrol?: { waypoints: [{x, y}], speed, startAt } }. Units are world px; scale is px per meter.
+export const DEFAULT_SCALE = 40;
 export const FORMAT = "lidar-sim-map";
 export const VERSION = 1;
 export const WALL_COLOR = "rgba(90, 90, 90, 0.8)";
@@ -90,6 +91,7 @@ export function serializeMap(map, name = map.name ?? "") {
         version: VERSION,
         name,
         worldSize: { width: r2(map.worldSize.width), height: r2(map.worldSize.height) },
+        scale: map.scale ?? DEFAULT_SCALE,
         start: { x: r2(map.start.x), y: r2(map.start.y), angle: Math.round((map.start.angle ?? 0) * 1e4) / 1e4 },
         obstacles: map.obstacles.map(obstacleToJSON),
     };
@@ -106,6 +108,8 @@ export function deserializeMap(data) {
     const width = num(data.worldSize?.width, "worldSize.width");
     const height = num(data.worldSize?.height, "worldSize.height");
     if (width <= 0 || height <= 0) throw new Error("worldSize must be positive");
+    const scale = data.scale === undefined ? DEFAULT_SCALE : num(data.scale, "scale");
+    if (scale <= 0) throw new Error("scale must be positive");
     if (!Array.isArray(data.obstacles)) throw new Error("obstacles must be a list");
     const list = (arr, key) => {
         if (arr === undefined) return [];
@@ -118,6 +122,7 @@ export function deserializeMap(data) {
     return {
         name: typeof data.name === "string" ? data.name : "",
         worldSize: { width, height },
+        scale,
         start,
         obstacles: list(data.obstacles, "obstacles"),
         floor: list(data.floor, "floor"),
@@ -140,6 +145,7 @@ export function emptyMap(width = 960, height = 1080) {
     return {
         name: "sandbox",
         worldSize,
+        scale: DEFAULT_SCALE,
         start: { x: width / 2, y: height / 2, angle: -Math.PI / 2 },
         obstacles: borderWalls(worldSize),
         floor: [],

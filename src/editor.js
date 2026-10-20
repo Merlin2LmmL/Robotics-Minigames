@@ -1,6 +1,6 @@
 import { Obstacle } from "./map/obstacle.js";
 import { environments } from "./map/map.js";
-import { sandbox, serializeMap, deserializeMap, borderWalls, setPatrol, WALL_COLOR } from "./map/sandbox.js";
+import { sandbox, serializeMap, deserializeMap, borderWalls, setPatrol, WALL_COLOR, DEFAULT_SCALE } from "./map/sandbox.js";
 
 // Sandbox map editor. Edits sandbox.design in place; main.js draws the design (instead of
 // simulating a map) while document.body.dataset.editor is "on".
@@ -10,8 +10,8 @@ const PICK_PX = 6;          // click tolerance on screen, CSS px
 const MIN_SIZE = 2;         // smallest shape, world px
 const HISTORY_LIMIT = 60;
 const DOUBLE_CLICK_MS = 400;
-const PERSON_RADIUS = 12;
-const PERSON_SPEED = 36;    // px/s, about walking pace at the warehouse scale
+const PERSON_RADIUS = 0.3;  // m
+const PERSON_SPEED = 0.9;   // m/s, walking pace
 const PERSON_COLOR = "rgba(230, 120, 60, 0.9)";
 const SELECT_COLOR = "rgba(30, 110, 230, 1)";
 const ROUTE_COLOR = "rgba(230, 120, 60, 1)";
@@ -45,6 +45,7 @@ const ui = {
     grid: el("editor-grid"),
     width: el("editor-width"),
     height: el("editor-height"),
+    scale: el("editor-scale"),
     border: el("editor-border"),
     clear: el("editor-clear"),
     name: el("editor-name"),
@@ -204,9 +205,10 @@ function wallPoints(a, b, t) {
 }
 
 function makePerson(a, b) {
-    const o = new Obstacle("circle", PERSON_COLOR, a.x, a.y, PERSON_RADIUS);
+    const scale = design().scale ?? DEFAULT_SCALE;
+    const o = new Obstacle("circle", PERSON_COLOR, a.x, a.y, PERSON_RADIUS * scale);
     o.outline = false;
-    if (b && Math.hypot(b.x - a.x, b.y - a.y) >= 2 * PERSON_RADIUS) setPatrol(o, [{ ...a }, { ...b }], PERSON_SPEED, 1);
+    if (b && Math.hypot(b.x - a.x, b.y - a.y) >= 2 * o.radius) setPatrol(o, [{ ...a }, { ...b }], PERSON_SPEED * scale, 1);
     return o;
 }
 
@@ -578,6 +580,7 @@ function syncUi() {
     const { width, height } = design().worldSize;
     if (document.activeElement !== ui.width) ui.width.value = Math.round(width);
     if (document.activeElement !== ui.height) ui.height.value = Math.round(height);
+    if (document.activeElement !== ui.scale) ui.scale.value = design().scale ?? DEFAULT_SCALE;
 }
 
 function switchMap(id) {
@@ -652,6 +655,13 @@ for (const input of [ui.width, ui.height]) {
         changed();
     });
 }
+
+ui.scale.addEventListener("change", () => {
+    const v = clamp(parseFloat(ui.scale.value) || DEFAULT_SCALE, 1, 1000);
+    checkpoint();
+    design().scale = v;
+    changed();
+});
 
 ui.border.addEventListener("click", () => {
     checkpoint();

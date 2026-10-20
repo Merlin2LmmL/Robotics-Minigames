@@ -43,32 +43,42 @@ function rayObstacle(ox, oy, dx, dy, o) {
   }
 }
 
-// offsetX/offsetY mount the sensor relative to the robot center (robot frame, +x = forward)
 // Standard normal sample (Box-Muller)
-function gaussian() {
+export function gaussian() {
   return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
 }
 
+// offsetX/offsetY mount the sensor relative to the robot center (robot frame, +x = forward).
+// range, rangeNoise and the offsets are in meters; setScale derives the world px values.
 export function lidarSensor({
   rayCount = 36,
   fov = Math.PI * 2,
-  range = 250,
+  range = 6.25,
   offsetX = 0,
   offsetY = 0,
   color = "rgba(255, 0, 0, 0.6)",
-  angleNoise = 0.01, // std dev of per-ray direction jitter, radians
-  rangeNoise = 1,    // std dev of per-hit distance error, world units
+  angleNoise = 0.01,  // std dev of per-ray direction jitter, radians
+  rangeNoise = 0.025, // std dev of per-hit distance error, m
 } = {}) {
   return {
     type: "lidar",
-    rayCount, fov, range, offsetX, offsetY, color, angleNoise, rangeNoise,
+    rayCount, fov, color, angleNoise,
+    spec: { range, rangeNoise, offsetX, offsetY },
+    scale: 1, range, rangeNoise, // world px per meter and the derived px values
     // one entry per ray: { angle, distance (null = no hit), x1, y1, x2, y2 } in world coords
     readings: [],
 
+    setScale(scale) {
+      this.scale = scale;
+      this.range = this.spec.range * scale;
+      this.rangeNoise = this.spec.rangeNoise * scale;
+    },
+
     scan(robot, obstacles) {
       const cos = Math.cos(robot.angle), sin = Math.sin(robot.angle);
-      const ox = robot.x + this.offsetX * cos - this.offsetY * sin;
-      const oy = robot.y + this.offsetX * sin + this.offsetY * cos;
+      const offX = this.spec.offsetX * this.scale, offY = this.spec.offsetY * this.scale;
+      const ox = robot.x + offX * cos - offY * sin;
+      const oy = robot.y + offX * sin + offY * cos;
       // full circle: don't duplicate the first ray at the end
       const steps = this.fov >= Math.PI * 2 - 1e-9 ? this.rayCount : Math.max(this.rayCount - 1, 1);
       const start = robot.angle - this.fov / 2;

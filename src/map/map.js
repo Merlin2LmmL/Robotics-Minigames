@@ -1,7 +1,7 @@
 import { generateMaze } from "./maze.js";
 import { generateWarehouse } from "./warehouse.js";
 import { sandbox } from "./sandbox.js";
-import { map as floorplanMap, worldSize as floorplanSize, outline as floorplanOutline } from "./floorplan.js";
+import { map as floorplanMap, worldSize as floorplanSize, outline as floorplanOutline, SCALE as floorplanScale } from "./floorplan.js";
 
 for (const o of floorplanOutline) o.outline = false;
 
@@ -19,17 +19,19 @@ const maps = {
         obstacles: maze.obstacles,
         start: maze.start,
         worldSize: { width: 960, height: 1080 },
+        scale: 40, // 3 m cells
     },
     floorplan: {
         obstacles: floorplanMap.obstacles,
         start: floorplanMap.start,
         worldSize: floorplanSize,
+        scale: floorplanScale,
         outline: floorplanOutline,
     },
 };
 
 // Selectable environments, keyed by the value of document.body.dataset.map.
-// build(params) returns { obstacles, start, worldSize, outline? }.
+// build(params) returns { obstacles, start, worldSize, scale (px per meter), floor?, outline? }.
 export const environments = [
     { id: "maze", name: "Maze", description: "A random perfect maze with no loops.", build: () => maps.maze },
     { id: "floorplan", name: "Floorplan", description: "A fixed map of rooms and walls.", build: () => maps.floorplan },
