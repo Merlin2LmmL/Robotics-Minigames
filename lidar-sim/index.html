@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Robot LiDAR Sim</title>
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: white;
+  }
+
+  #layout {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
+  }
+
+  #stage {
+    display: flex;
+    flex-direction: column;
+    width: 50vw;
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    background: white;
+    flex-shrink: 0;
+  }
+
+  #toolbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 6px;
+  }
+
+  canvas#board {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    flex: 1 1 0;
+    min-height: 0;
+    object-fit: contain;
+    border: 1px solid black;
+  }
+
+  #fs-btn {
+    width: 36px;
+    height: 36px;
+    padding: 6px;
+    background: white;
+    border: 1px solid black;
+    cursor: pointer;
+  }
+  #fs-btn svg { display: block; }
+  #fs-btn .icon-minimize { display: none; }
+
+  #stage:fullscreen canvas#board { border: 0; }
+  #stage:fullscreen #fs-btn .icon-maximize { display: none; }
+  #stage:fullscreen #fs-btn .icon-minimize { display: block; }
+
+  @media (max-width: 900px) {
+    #layout { flex-direction: column; }
+    #stage { width: 100%; height: auto; }
+    canvas#board { flex: none; height: auto; }
+    footer { position: static; text-align: center; padding: 10px; }
+  }
+
+  /* side menu */
+  #side-menu {
+    flex: 1;
+    min-width: 300px;
+    padding: 6px 20px 6px 6px;
+    overflow: auto;
+    height: 100vh;
+    height: 100dvh;
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 900px) {
+    #side-menu { height: auto; overflow: visible; padding: 8px; }
+  }
+
+  .card {
+    border: 1px solid black;
+    padding: 8px;
+    margin-bottom: 10px;
+  }
+
+  h2 { margin: 0 0 6px; font-size: 20px; }
+  p { margin: 0 0 8px; }
+  .hint { font-size: 13px; color: #555; }
+  .row { margin-bottom: 6px; }
+  #map-select, #seed-input { font: inherit; padding: 4px; }
+  #seed-input { width: 8em; }
+
+  /* on-screen WASD pad */
+  .pad {
+    display: grid;
+    grid-template-columns: repeat(3, 64px);
+    grid-template-rows: repeat(2, 64px);
+    gap: 6px;
+    justify-content: center;
+    margin: 6px 0;
+  }
+  .pad button {
+    font: bold 20px Arial, Helvetica, sans-serif;
+    background: #eee;
+    border: 1px solid black;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .pad button.active { background: #bbb; }
+  .pad .w { grid-column: 2; grid-row: 1; }
+  .pad .a { grid-column: 1; grid-row: 2; }
+  .pad .s { grid-column: 2; grid-row: 2; }
+  .pad .d { grid-column: 3; grid-row: 2; }
+
+  /* map editor */
+  .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tools button[aria-pressed="true"] { background: #bbb; }
+  .card input[type="number"], .card input[type="text"] { font: inherit; padding: 4px; }
+  .card input[type="number"] { width: 5em; }
+  .card input[type="text"] { width: 10em; }
+  body[data-editor="on"] canvas#board { cursor: crosshair; touch-action: none; }
+
+  .zoom { display: flex; gap: 6px; }
+  .zoom button { flex: 1; }
+
+  .stats { margin: 8px 0; }
+  .stat { display: inline-block; margin-right: 18px; }
+  .stat b { display: block; font-size: 18px; }
+  .stat span { font-size: 12px; }
+
+  #lidar-readings {
+    margin: 0;
+    padding: 4px;
+    border: 1px solid black;
+    font-size: 13px;
+    max-height: 320px;
+    overflow: auto;
+  }
+
+  footer {
+    position: fixed;
+    right: 8px;
+    bottom: 4px;
+    font-size: 12px;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+<div id="layout">
+
+  <!-- ===================== GAME (left / top on mobile) ===================== -->
+  <div id="stage">
+    <div id="toolbar">
+      <button id="fs-btn" type="button" title="Fullscreen" aria-label="Fullscreen">
+        <svg class="icon-maximize" viewBox="0 0 24 24" width="100%" height="100%" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
+        </svg>
+        <svg class="icon-minimize" viewBox="0 0 24 24" width="100%" height="100%" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>
+        </svg>
+      </button>
+    </div>
+
+    <canvas id="board" width="960" height="1080"></canvas>
+  </div>
+
+  <!-- ===================== CONTROLS ===================== -->
+  <aside id="side-menu">
+
+    <section class="card">
+      <h2>View</h2>
+      <div class="row">
+        <button id="view-btn" type="button">View: Robot</button>
+      </div>
+      <p class="hint">World keeps the map still. Robot keeps the robot still and rotates the map.</p>
+    </section>
+
+    <section class="card">
+      <h2>Map</h2>
+      <div class="row">
+        <select id="map-select" aria-label="Map"></select>
+      </div>
+      <p class="hint" id="map-desc"></p>
+      <label class="row" id="seed-row">Seed <input id="seed-input" type="number" min="0" step="1" value="1"></label>
+      <p class="hint">Switching puts the robot back at the start.</p>
+    </section>
+
+    <section class="card">
+      <h2>Editor</h2>
+      <div class="row buttons">
+        <button id="editor-btn" type="button">Editor: Off</button>
+        <button id="editor-copy" type="button">Edit a copy of this map</button>
+      </div>
+      <div id="editor-tools" hidden>
+        <div class="row tools" role="group" aria-label="Tool">
+          <button type="button" data-tool="select">Select</button>
+          <button type="button" data-tool="rectangle">Rectangle</button>
+          <button type="button" data-tool="circle">Circle</button>
+          <button type="button" data-tool="wall">Wall</button>
+          <button type="button" data-tool="polygon">Polygon</button>
+          <button type="button" data-tool="person">Person</button>
+          <button type="button" data-tool="start">Robot start</button>
+          <button type="button" data-tool="erase">Erase</button>
+        </div>
+        <p class="hint" id="editor-hint"></p>
+        <div class="row buttons">
+          <label>Color <input id="editor-color" type="color"></label>
+          <label><input id="editor-movable" type="checkbox"> Pushable</label>
+          <button id="editor-delete" type="button">Delete</button>
+          <button id="editor-undo" type="button">Undo</button>
+        </div>
+        <div class="row buttons">
+          <label>Wall thickness <input id="editor-thickness" type="number" min="1" step="1" value="12"> px</label>
+        </div>
+        <div class="row buttons">
+          <label><input id="editor-snap" type="checkbox" checked> Snap to grid</label>
+          <label><input id="editor-grid" type="number" min="1" step="1" value="10" aria-label="Grid size"> px</label>
+        </div>
+        <div class="row buttons">
+          <label>World <input id="editor-width" type="number" min="100" step="10" aria-label="World width"></label>
+          <label>&times; <input id="editor-height" type="number" min="100" step="10" aria-label="World height"> px</label>
+        </div>
+        <div class="row buttons">
+          <label>Scale <input id="editor-scale" type="number" min="1" step="1" aria-label="Pixels per meter"> px per meter</label>
+        </div>
+        <div class="row buttons">
+          <button id="editor-border" type="button">Add border walls</button>
+          <button id="editor-clear" type="button">Clear</button>
+        </div>
+        <p class="hint">Color and Pushable change the selected shape, or the next one drawn when nothing is selected. Only rectangles and circles can be pushed. Delete removes the selection, Ctrl+Z undoes, the mouse wheel zooms and right-drag pans.</p>
+      </div>
+      <div class="row buttons">
+        <label>Name <input id="editor-name" type="text" spellcheck="false"></label>
+        <button id="editor-export" type="button">Export</button>
+        <button id="editor-import" type="button">Import</button>
+        <input id="editor-file" type="file" accept=".json,application/json" hidden>
+      </div>
+      <p class="hint" id="editor-status" aria-live="polite"></p>
+      <p class="hint">Turn the editor off to drive the sandbox map. Maps are saved in this browser and can be exported as .json files; importing one loads it into the sandbox.</p>
+    </section>
+
+    <section class="card">
+      <h2>Zoom</h2>
+      <div class="row zoom">
+        <button id="zoom-out" type="button" aria-label="Zoom out">&minus;</button>
+        <button id="zoom-reset" type="button" aria-label="Reset zoom">100%</button>
+        <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Environment</h2>
+      <div class="row">
+        <button id="environment-btn" type="button">Environment: On</button>
+      </div>
+      <p class="hint">On draws the walls and obstacles. Off hides them, leaving only the lidar beams and their hit points.</p>
+    </section>
+
+    <section class="card">
+      <h2>Drive</h2>
+      <div class="pad" aria-label="Movement buttons">
+        <button type="button" class="w" data-code="KeyW">W</button>
+        <button type="button" class="a" data-code="KeyA">A</button>
+        <button type="button" class="s" data-code="KeyS">S</button>
+        <button type="button" class="d" data-code="KeyD">D</button>
+      </div>
+      <p class="hint">Hold a button to drive. Keyboard WASD and arrow keys work too.</p>
+    </section>
+
+    <section class="card">
+      <h2>Lidar sensor</h2>
+      <div class="stats" aria-live="polite">
+        <div class="stat"><b id="lidar-hits">0</b><span>rays hitting</span></div>
+        <div class="stat"><b id="lidar-nearest">-</b><span>nearest (m)</span></div>
+        <div class="stat"><b id="lidar-range">-</b><span>range (m)</span></div>
+      </div>
+      <pre id="lidar-readings"></pre>
+      <p class="hint">Angle is relative to where the robot faces. Distance is in meters, "-" means nothing in range.</p>
+    </section>
+
+    <section class="card">
+      <h2>IMU and odometry</h2>
+      <div class="stats" aria-live="off">
+        <div class="stat"><b id="imu-ax">-</b><span>forward accel (m/s²)</span></div>
+        <div class="stat"><b id="imu-ay">-</b><span>sideways accel (m/s²)</span></div>
+        <div class="stat"><b id="imu-wz">-</b><span>turn rate (°/s)</span></div>
+        <div class="stat"><b id="odo-v">-</b><span>wheel speed (m/s)</span></div>
+      </div>
+      <div class="row buttons">
+        <button id="dr-btn" type="button">Dead reckoning: On</button>
+        <button id="dr-reset" type="button">Reset estimate</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="dr-error">-</b><span>estimate is off by (m)</span></div>
+      </div>
+      <p class="hint">The IMU measures acceleration (right is positive sideways) and turn rate, both with noise and a small constant bias; the wheels report forward speed with noise and a small wheel size error. The purple outline is where the robot would think it is using only the gyro and the wheels, and it drifts further from the truth the longer you drive.</p>
+    </section>
+
+  </aside>
+
+</div>
+
+<footer>Developed by Merlin2LmmL (ortnermerlin@gmail.com) in 2026</footer>
+
+<!-- ===================== FULLSCREEN ===================== -->
+<script>
+(() => {
+  const stage = document.getElementById("stage");
+  const fsBtn = document.getElementById("fs-btn");
+
+  fsBtn.addEventListener("click", async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await stage.requestFullscreen();
+      }
+    } catch (err) {
+      console.error("Fullscreen failed:", err);
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    const full = document.fullscreenElement === stage;
+    const label = full ? "Exit fullscreen" : "Fullscreen";
+    fsBtn.title = label;
+    fsBtn.setAttribute("aria-label", label);
+  });
+})();
+</script>
+
+<!-- ===================== UI: VIEW TOGGLE + LIDAR LOG ===================== -->
+<script type="module">
+import { robot } from "./src/robot.js";
+import { deadReckoning } from "./src/deadReckoning.js";
+import { environments } from "./src/map/map.js";
+// main.js reads document.body.dataset.view to pick the camera
+const viewBtn = document.getElementById("view-btn");
+document.body.dataset.view = "robot";
+viewBtn.addEventListener("click", () => {
+  const robotView = document.body.dataset.view !== "robot";
+  document.body.dataset.view = robotView ? "robot" : "world";
+  viewBtn.textContent = robotView ? "View: Robot" : "View: World";
+});
+
+// main.js reads document.body.dataset.map and reloads the robot when it changes
+const mapSelect = document.getElementById("map-select");
+const mapDesc = document.getElementById("map-desc");
+const seedRow = document.getElementById("seed-row");
+const seedInput = document.getElementById("seed-input");
+document.body.dataset.seed = seedInput.value;
+seedInput.addEventListener("input", () => {
+  document.body.dataset.seed = String(Math.max(0, parseInt(seedInput.value, 10) || 0));
+});
+for (const e of environments) mapSelect.add(new Option(e.name, e.id));
+const urlMap = new URLSearchParams(location.search).get("map");
+document.body.dataset.map = environments.some(e => e.id === urlMap) ? urlMap : "maze";
+function syncMapUi() {
+  mapSelect.value = document.body.dataset.map;
+  seedRow.hidden = mapSelect.value !== "warehouse";
+  mapDesc.textContent = environments.find(e => e.id === mapSelect.value).description;
+}
+mapSelect.addEventListener("change", () => {
+  document.body.dataset.map = mapSelect.value;
+  syncMapUi();
+});
+syncMapUi();
+
+// main.js reads document.body.dataset.zoom as a camera scale multiplier
+const ZOOM_MIN = 0.5, ZOOM_MAX = 4, ZOOM_STEP = 1.25;
+const zoomReset = document.getElementById("zoom-reset");
+function setZoom(z) {
+  z = Math.min(Math.max(z, ZOOM_MIN), ZOOM_MAX);
+  document.body.dataset.zoom = String(z);
+  zoomReset.textContent = Math.round(z * 100) + "%";
+}
+setZoom(1);
+document.getElementById("zoom-in").addEventListener("click",
+  () => setZoom(parseFloat(document.body.dataset.zoom) * ZOOM_STEP));
+document.getElementById("zoom-out").addEventListener("click",
+  () => setZoom(parseFloat(document.body.dataset.zoom) / ZOOM_STEP));
+zoomReset.addEventListener("click", () => setZoom(1));
+
+// main.js reads document.body.dataset.environment to decide whether to draw the map
+const environmentBtn = document.getElementById("environment-btn");
+document.body.dataset.environment = "on";
+environmentBtn.addEventListener("click", () => {
+  const on = document.body.dataset.environment === "off";
+  document.body.dataset.environment = on ? "on" : "off";
+  environmentBtn.textContent = on ? "Environment: On" : "Environment: Off";
+});
+
+// on-screen WASD pad: fire the same key events main.js already listens for
+for (const btn of document.querySelectorAll(".pad button")) {
+  const press = down => {
+    btn.classList.toggle("active", down);
+    window.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup",
+      { code: btn.dataset.code, cancelable: true }));
+  };
+  btn.addEventListener("pointerdown", e => { btn.setPointerCapture(e.pointerId); press(true); });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"])
+    btn.addEventListener(ev, () => { if (btn.classList.contains("active")) press(false); });
+  btn.addEventListener("contextmenu", e => e.preventDefault());
+}
+
+// main.js reads document.body.dataset.deadReckoning to decide whether to draw the estimate
+const drBtn = document.getElementById("dr-btn");
+document.body.dataset.deadReckoning = "on";
+drBtn.addEventListener("click", () => {
+  const on = document.body.dataset.deadReckoning === "off";
+  document.body.dataset.deadReckoning = on ? "on" : "off";
+  drBtn.textContent = on ? "Dead reckoning: On" : "Dead reckoning: Off";
+});
+document.getElementById("dr-reset").addEventListener("click",
+  () => deadReckoning.reset({ x: robot.x, y: robot.y, angle: robot.angle }));
+
+const imuEls = {
+  ax: document.getElementById("imu-ax"),
+  ay: document.getElementById("imu-ay"),
+  wz: document.getElementById("imu-wz"),
+  v: document.getElementById("odo-v"),
+  error: document.getElementById("dr-error"),
+};
+
+const lidarEls = {
+  hits: document.getElementById("lidar-hits"),
+  nearest: document.getElementById("lidar-nearest"),
+  range: document.getElementById("lidar-range"),
+  list: document.getElementById("lidar-readings"),
+};
+
+function updateLidarPanel() {
+  const lidar = robot.sensors.find(s => s.type === "lidar");
+  if (lidar) {
+    const hits = lidar.readings.filter(r => r.distance !== null);
+    lidarEls.hits.textContent = `${hits.length}/${lidar.readings.length}`;
+    lidarEls.nearest.textContent = hits.length
+      ? (Math.min(...hits.map(r => r.distance)) / lidar.scale).toFixed(2) : "-";
+    lidarEls.range.textContent = lidar.spec.range;
+    lidarEls.list.textContent = lidar.readings.map((r, i) => {
+      let deg = ((r.angle - robot.angle) * 180 / Math.PI) % 360;
+      if (deg > 180) deg -= 360;
+      if (deg < -180) deg += 360;
+      const d = r.distance === null ? "-" : (r.distance / lidar.scale).toFixed(2);
+      return `#${String(i).padStart(2, "0")}  ${deg.toFixed(0).padStart(4)}°  ${d.padStart(6)}`;
+    }).join("\n");
+  }
+  const imu = robot.sensors.find(s => s.type === "imu");
+  const odo = robot.sensors.find(s => s.type === "odometry");
+  if (imu) {
+    imuEls.ax.textContent = imu.reading.ax.toFixed(2);
+    imuEls.ay.textContent = imu.reading.ay.toFixed(2);
+    imuEls.wz.textContent = (imu.reading.wz * 180 / Math.PI).toFixed(1);
+  }
+  if (odo) imuEls.v.textContent = odo.reading.v.toFixed(2);
+  imuEls.error.textContent = deadReckoning.error(robot).toFixed(2);
+  requestAnimationFrame(updateLidarPanel);
+}
+requestAnimationFrame(updateLidarPanel);
+</script>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
