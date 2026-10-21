@@ -2,7 +2,9 @@
 
 A browser-based simulation of a LiDAR-equipped robot. Drive it around, watch the lidar scan the world, push pallets, annoy warehouse workers and build your own maps. The robot has googly eyes. This is not up for discussion.
 
-**[Try the live demo](https://merlin2lmml.github.io/LiDAR-Sim/)**
+**[Try the live demo](https://merlin2lmml.github.io/Robotics-Minigames/lidar-sim/)**
+
+> Part of the [Robotics Minigames](https://github.com/Merlin2LmmL/Robotics-Minigames) collection.
 
 ## Features
 
@@ -39,12 +41,12 @@ No build step, no dependencies. The code uses JavaScript modules, so the page ha
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. In VS Code, the `serve` task does the same.
+Run it from the repository root, then open <http://localhost:8000/lidar-sim/>. In VS Code, the `serve` task does the same.
 
 The warehouse also takes URL parameters, for example:
 
 ```
-?map=warehouse&rowCount=5&aisleWidth=2.5&workerCount=1&spawn=10,20,0
+lidar-sim/?map=warehouse&rowCount=5&aisleWidth=2.5&workerCount=1&spawn=10,20,0
 ```
 
 Also supported: `rowLength`, `shelfUnitLength` and `clutterAmount`.
@@ -93,4 +95,4 @@ src/map/              maps, obstacles, movers and the map file format
 
 ## License
 
-GPL-2.0. See [LICENSE](LICENSE).
+GPL-2.0. See [LICENSE](../LICENSE).
