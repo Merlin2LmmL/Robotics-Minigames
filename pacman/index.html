@@ -108,16 +108,28 @@
   }
 
   /* play panel */
-  .keys kbd {
-    display: inline-block;
-    width: 28px;
-    height: 28px;
-    line-height: 28px;
-    text-align: center;
-    border: 1px solid black;
-    margin: 2px;
-    background: #eee;
+  .keys {
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(2, 56px);
+    gap: 6px;
+    margin: 6px 0;
   }
+  .keys button {
+    font: bold 18px Arial, Helvetica, sans-serif;
+    border: 1px solid black;
+    background: #eee;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .keys button:active { background: #bbb; }
+  .keys .w { grid-column: 2; grid-row: 1; }
+  .keys .a { grid-column: 1; grid-row: 2; }
+  .keys .s { grid-column: 2; grid-row: 2; }
+  .keys .d { grid-column: 3; grid-row: 2; }
 
   /* rules */
   #rule-list { margin: 0; padding-left: 24px; }
@@ -237,8 +249,11 @@
     <section class="card mode-panel" id="panel-play" hidden>
       <h2>Play</h2>
       <p>Play Pacman yoursef the old fasion way.</p>
-      <div class="keys" aria-label="Movement keys">
-        <kbd class="w">W</kbd><kbd class="a">A</kbd><kbd class="s">S</kbd><kbd class="d">D</kbd>
+      <div class="keys" aria-label="Movement buttons">
+        <button type="button" class="w" data-key="w" aria-label="Up">W</button>
+        <button type="button" class="a" data-key="a" aria-label="Left">A</button>
+        <button type="button" class="s" data-key="s" aria-label="Down">S</button>
+        <button type="button" class="d" data-key="d" aria-label="Right">D</button>
       </div>
       <p class="hint">Arrow keys work too. If you are on mobile, sorry, these buttons will do the job.</p>
       <div class="row spread">
@@ -439,6 +454,16 @@
     emit("thinking", { enabled: e.target.checked });
   });
   $("chk-step").addEventListener("change", e => emit("step-mode", { enabled: e.target.checked }));
+
+  // ---------- On-screen WASD ----------
+  // fire the same key event main.js already listens for
+  document.querySelectorAll(".keys button").forEach(btn => {
+    btn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: btn.dataset.key, cancelable: true }));
+    });
+    btn.addEventListener("contextmenu", e => e.preventDefault());
+  });
 
   // ---------- Rules editor ----------
   const ruleList = $("rule-list");
