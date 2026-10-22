@@ -4,21 +4,14 @@
         {
             "label": "serve",
             "type": "shell",
-            "command": "python3 -u -m http.server 8000 --bind 127.0.0.1",
-            "isBackground": true,
-            "problemMatcher": {
-                "pattern": { "regexp": "^$" },
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": "^$",
-                    "endsPattern": "Serving HTTP on"
-                }
-            }
+            "detail": "Starts the server in the background unless one is already up, then exits once it answers",
+            "command": "curl -s -o /dev/null http://127.0.0.1:8000/ || { setsid nohup python3 -m http.server 8000 --bind 127.0.0.1 >/dev/null 2>&1 & for i in $(seq 50); do sleep 0.1; curl -s -o /dev/null http://127.0.0.1:8000/ && exit 0; done; echo 'server did not start' >&2; exit 1; }",
+            "problemMatcher": []
         },
         {
             "label": "stop-serve",
             "type": "shell",
-            "command": "pkill -f 'http.server 8000' || true"
+            "command": "pkill -f '[h]ttp.server 8000' || true"
         }
     ]
 }
