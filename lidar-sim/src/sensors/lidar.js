@@ -29,7 +29,7 @@ function rayPath(ox, oy, dx, dy, pts, closed) {
   return best;
 }
 
-function rayObstacle(ox, oy, dx, dy, o) {
+export function rayObstacle(ox, oy, dx, dy, o) {
   switch (o.shape) {
     case "rectangle": {
       const { x, y, width: w, height: h } = o;
@@ -65,7 +65,8 @@ export function lidarSensor({
     rayCount, fov, color, angleNoise,
     spec: { range, rangeNoise, offsetX, offsetY },
     scale: 1, range, rangeNoise, // world px per meter and the derived px values
-    // one entry per ray: { angle, distance (null = no hit), x1, y1, x2, y2 } in world coords
+    // one entry per ray: { angle, relAngle, distance (null = no hit), x1, y1, x2, y2 } in world coords.
+    // relAngle is the beam's nominal direction relative to the robot, the only angle the robot itself knows.
     readings: [],
 
     setScale(scale) {
@@ -81,12 +82,11 @@ export function lidarSensor({
       const oy = robot.y + offX * sin + offY * cos;
       // full circle: don't duplicate the first ray at the end
       const steps = this.fov >= Math.PI * 2 - 1e-9 ? this.rayCount : Math.max(this.rayCount - 1, 1);
-      const start = robot.angle - this.fov / 2;
 
       this.readings = [];
       for (let i = 0; i < this.rayCount; i++) {
-        const a = (this.rayCount === 1 ? robot.angle : start + (this.fov * i) / steps)
-          + gaussian() * this.angleNoise;
+        const rel = this.rayCount === 1 ? 0 : -this.fov / 2 + (this.fov * i) / steps;
+        const a = robot.angle + rel + gaussian() * this.angleNoise;
         const dx = Math.cos(a), dy = Math.sin(a);
         let d = this.range;
         let hit = false;
@@ -96,7 +96,7 @@ export function lidarSensor({
         }
         if (hit) d = Math.min(Math.max(d + gaussian() * this.rangeNoise, 0), this.range);
         this.readings.push({
-          angle: a, distance: hit ? d : null,
+          angle: a, relAngle: rel, distance: hit ? d : null,
           x1: ox, y1: oy, x2: ox + dx * d, y2: oy + dy * d,
         });
       }

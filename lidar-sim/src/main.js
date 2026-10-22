@@ -1,5 +1,6 @@
 import { robot, updateRobot, drawRobot, setRobotScale } from "./robot.js";
 import { deadReckoning } from "./deadReckoning.js";
+import { kalman } from "./kalman.js";
 import { buildMap, paramsFromQuery } from "./map/map.js";
 import { sandbox, DEFAULT_SCALE } from "./map/sandbox.js";
 import { editor } from "./editor.js";
@@ -39,6 +40,7 @@ function loadMap(key) {
   // a fresh start powers the sensors up again with new biases
   for (const s of robot.sensors) s.reset?.();
   deadReckoning.reset(map.start);
+  kalman.reset(map.start, robot.scale);
 }
 
 function initialize() {
@@ -76,6 +78,7 @@ function update(timestamp) {
     setRobotScale(robot, map.scale ?? DEFAULT_SCALE);
     placeRobot(map.start);
     deadReckoning.reset(map.start);
+    kalman.reset(map.start, robot.scale);
     for (const s of robot.sensors) s.scan?.(robot, map.obstacles);
   } else {
     if (mapEditing || key !== mapKey || (key === "warehouse" && document.body.dataset.seed !== mapSeed)) loadMap(key);
@@ -85,6 +88,7 @@ function update(timestamp) {
     for (const o of map.obstacles) o.update(dt, world);
     updateRobot(robot, dt, keys, map.obstacles);
     deadReckoning.step(robot, dt);
+    kalman.step(robot, dt, map.obstacles);
   }
   mapEditing = editing;
 
@@ -126,6 +130,7 @@ function update(timestamp) {
     (map.outline ?? []).forEach(o => o.draw(ctx, scrollX, scrollY));
   }
   if (!editing && document.body.dataset.deadReckoning === "on") deadReckoning.draw(ctx, robot);
+  if (!editing && document.body.dataset.kalman === "on") kalman.draw(ctx, robot);
   if (editing) editor.draw(ctx);
 
   requestAnimationFrame(update);

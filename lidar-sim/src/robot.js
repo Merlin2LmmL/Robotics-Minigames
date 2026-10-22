@@ -1,5 +1,6 @@
 import { lidarSensor } from "./sensors/lidar.js";
 import { imuSensor, odometrySensor } from "./sensors/imu.js";
+import { gpsSensor } from "./sensors/gps.js";
 
 // Physical size and limits in meters and seconds. setRobotScale turns them into the
 // world px values the simulation uses, so the robot is the same real size on every map.
@@ -23,6 +24,7 @@ export const robot = {
     lidarSensor({ rayCount: 36, fov: Math.PI * 2, range: 6.25 }),
     imuSensor(),
     odometrySensor(),
+    gpsSensor(),
   ],
   // googly pupils: offset from the eye centre (robot frame) and their velocity,
   // each with its own spring so the two eyes don't move in lockstep

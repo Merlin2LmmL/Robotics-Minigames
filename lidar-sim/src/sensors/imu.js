@@ -44,7 +44,7 @@ export function odometrySensor({
     const drawFactor = () => 1 + gaussian() * scaleError;
     return {
         type: "odometry",
-        speedNoise,
+        speedNoise, scaleError,
         factor: drawFactor(),
         reading: { v: 0 }, // m/s, negative when reversing
 

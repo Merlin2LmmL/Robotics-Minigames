@@ -12,7 +12,9 @@ A browser-based simulation of a LiDAR-equipped robot. Drive it around, watch the
 - **Real-world units:** every map knows how many pixels make a meter, so the robot (1 × 0.5 m) and its sensors are the same size everywhere.
 - **LiDAR sensor:** 36 rays in a full circle with a 6.25 m range, plus a little angle and distance noise because real sensors aren't perfect either. Every reading is shown live in the side panel.
 - **IMU and wheel odometry:** an accelerometer and gyroscope that measure acceleration and turn rate (not velocity, just like the real thing), and wheel encoders that report forward speed. All of them come with noise and a small bias.
-- **Dead reckoning:** a purple outline shows where the robot *thinks* it is using only the gyro and wheels. It drifts. That's the point.
+- **GPS:** an absolute position fix twice a second. It never drifts, but every fix is about a meter off.
+- **Dead reckoning:** a purple outline shows where the robot *thinks* it is using only the gyro and wheels. Like a real robot it first averages the gyro for 2 s while standing still and subtracts that bias, but it still drifts. That's the point.
+- **Sensor fusion with an extended Kalman filter:** a green outline fuses gyro, accelerometer, wheel odometry, lidar and GPS into one estimate, with a 95% uncertainty ellipse around it. The lidar is matched against the map: each beam's range is compared with what the map predicts from the estimated pose, and beams that hit people or pushed pallets are rejected as outliers. Switch any sensor on or off and watch the live error chart, or scramble the estimate and watch it recover. The filter also learns the gyro's bias.
 - **Two camera modes:** *World* keeps the map still; *Robot* keeps the robot still and turns the world around it.
 - **Environment toggle:** hide all walls and obstacles and drive using only the lidar hits, just like the robot does.
 - **Maps**
@@ -78,7 +80,8 @@ Supported shapes are `rectangle`, `circle`, `polygon` (`points`) and `line` (`x1
 - Shapes with corners pointing inwards collide as if those corners were filled in.
 - Only rectangles and circles can be pushed.
 - The sandbox autosave lives in your browser only, so export your map if you want to keep or share it.
-- No SLAM yet. The robot knows exactly where it is, which is frankly cheating. That's next.
+- No SLAM yet. The Kalman filter localizes against a map it is given (every wall that neither walks nor can be pushed), so it can't build one itself. That's next.
+- Without the gyro, lidar matching in the warehouse can lock onto the wrong aisle, because they all look the same. A Kalman filter only tracks one guess.
 
 ## Project structure
 
@@ -89,7 +92,9 @@ src/robot.js          robot movement, collision response and the face
 src/editor.js         map editor
 src/sensors/lidar.js  ray casting and noise
 src/sensors/imu.js    IMU and wheel odometry
+src/sensors/gps.js    noisy absolute position fixes
 src/deadReckoning.js  pose estimate from gyro and wheels
+src/kalman.js         extended Kalman filter fusing all sensors
 src/map/              maps, obstacles, movers and the map file format
 ```
 

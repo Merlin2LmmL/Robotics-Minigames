@@ -148,6 +148,19 @@
     overflow: auto;
   }
 
+  /* sensor fusion */
+  .sensors { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  #error-chart {
+    display: block;
+    width: 100%;
+    height: 160px;
+    border: 1px solid black;
+    box-sizing: border-box;
+  }
+  .legend { font-size: 13px; margin: 4px 0 8px; }
+  .legend span { display: inline-block; margin-right: 14px; }
+  .swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 4px; }
+
   footer {
     position: fixed;
     right: 8px;
@@ -307,7 +320,38 @@
       <div class="stats">
         <div class="stat"><b id="dr-error">-</b><span>estimate is off by (m)</span></div>
       </div>
-      <p class="hint">The IMU measures acceleration (right is positive sideways) and turn rate, both with noise and a small constant bias; the wheels report forward speed with noise and a small wheel size error. The purple outline is where the robot would think it is using only the gyro and the wheels, and it drifts further from the truth the longer you drive.</p>
+      <p class="hint">The IMU measures acceleration (right is positive sideways) and turn rate, both with noise and a small constant bias; the wheels report forward speed with noise and a small wheel size error. The purple outline is where the robot would think it is using only the gyro and the wheels, and it drifts further from the truth the longer you drive. It calibrates the gyro during its first 2 s of standing still, which removes most of the bias; the wheel size error and wall scrapes still add up.</p>
+    </section>
+
+    <section class="card">
+      <h2>Sensor fusion (Kalman filter)</h2>
+      <div class="row sensors" role="group" aria-label="Sensors the filter uses">
+        <label><input type="checkbox" data-sensor="gyro" checked> Gyroscope</label>
+        <label><input type="checkbox" data-sensor="accel" checked> Accelerometer</label>
+        <label><input type="checkbox" data-sensor="odometry" checked> Wheel odometry</label>
+        <label><input type="checkbox" data-sensor="lidar" checked> Lidar (map matching)</label>
+        <label><input type="checkbox" data-sensor="gps"> GPS</label>
+      </div>
+      <div class="row buttons">
+        <button id="kf-btn" type="button">Kalman filter: On</button>
+        <button id="kf-reset" type="button">Reset estimate</button>
+        <button id="kf-scramble" type="button">Scramble estimate</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="kf-error">-</b><span>estimate is off by (m)</span></div>
+        <div class="stat"><b id="kf-heading">-</b><span>heading off by (°)</span></div>
+        <div class="stat"><b id="kf-sigma">-</b><span>filter's own guess, 1σ (m)</span></div>
+        <div class="stat"><b id="kf-lidar">-</b><span>lidar rays fused / rejected</span></div>
+        <div class="stat"><b id="kf-bias">-</b><span>gyro bias learned / true (°/s)</span></div>
+      </div>
+      <canvas id="error-chart"></canvas>
+      <div class="legend">
+        <span><i class="swatch" style="background: rgb(140, 60, 200)"></i>Dead reckoning <b id="rms-dr">-</b></span>
+        <span><i class="swatch" style="background: rgb(0, 150, 90)"></i>Kalman filter <b id="rms-kf">-</b></span>
+        <span><i class="swatch" style="background: repeating-linear-gradient(90deg, rgb(0, 150, 90) 0 4px, transparent 4px 7px)"></i>Filter's 2σ guess</span>
+      </div>
+      <p class="hint">Position error over the last 30 s, with the RMS error in meters. Vertical lines mark sensor switches.</p>
+      <p class="hint">An extended Kalman filter predicts the motion from the accelerometer, then corrects it with each measurement in proportion to how much it trusts it. The gyro and wheels alone still drift, just slower than dead reckoning. The lidar compares every few beams with the distance the map predicts from the estimated pose and pulls the estimate back to where the walls fit; beams that hit people or pallets don't fit and are rejected. GPS never drifts but jumps around by a meter; fused with the rest it stops jumping. The green ellipse is where the filter is 95% sure the robot is. Scramble throws the estimate off to watch it recover.</p>
     </section>
 
   </aside>
@@ -347,6 +391,7 @@
 <script type="module">
 import { robot } from "./src/robot.js";
 import { deadReckoning } from "./src/deadReckoning.js";
+import { kalman } from "./src/kalman.js";
 import { environments } from "./src/map/map.js";
 // main.js reads document.body.dataset.view to pick the camera
 const viewBtn = document.getElementById("view-btn");
@@ -468,9 +513,127 @@ function updateLidarPanel() {
   }
   if (odo) imuEls.v.textContent = odo.reading.v.toFixed(2);
   imuEls.error.textContent = deadReckoning.error(robot).toFixed(2);
+  updateFusionPanel();
   requestAnimationFrame(updateLidarPanel);
 }
 requestAnimationFrame(updateLidarPanel);
+
+// main.js reads document.body.dataset.kalman to decide whether to draw the fused estimate
+const kfBtn = document.getElementById("kf-btn");
+document.body.dataset.kalman = "on";
+kfBtn.addEventListener("click", () => {
+  const on = document.body.dataset.kalman === "off";
+  document.body.dataset.kalman = on ? "on" : "off";
+  kfBtn.textContent = on ? "Kalman filter: On" : "Kalman filter: Off";
+});
+document.getElementById("kf-reset").addEventListener("click",
+  () => kalman.reset({ x: robot.x, y: robot.y, angle: robot.angle }, robot.scale));
+document.getElementById("kf-scramble").addEventListener("click", () => kalman.scramble());
+
+// error history for the chart: a sample every SAMPLE_DT, plus a marker per sensor switch
+const SAMPLE_DT = 0.1, HISTORY_S = 30;
+const history = [], marks = [];
+const SENSOR_NAMES = { gyro: "gyro", accel: "accel", odometry: "wheels", lidar: "lidar", gps: "GPS" };
+for (const box of document.querySelectorAll("[data-sensor]")) {
+  box.checked = kalman.use[box.dataset.sensor];
+  box.addEventListener("change", () => {
+    kalman.use[box.dataset.sensor] = box.checked;
+    marks.push({ t: performance.now() / 1000, label: (box.checked ? "+" : "−") + SENSOR_NAMES[box.dataset.sensor] });
+  });
+}
+
+const kfEls = {
+  error: document.getElementById("kf-error"),
+  heading: document.getElementById("kf-heading"),
+  sigma: document.getElementById("kf-sigma"),
+  lidar: document.getElementById("kf-lidar"),
+  bias: document.getElementById("kf-bias"),
+  rmsDr: document.getElementById("rms-dr"),
+  rmsKf: document.getElementById("rms-kf"),
+};
+const chart = document.getElementById("error-chart");
+const chartCtx = chart.getContext("2d");
+let lastSample = 0;
+
+function updateFusionPanel() {
+  const now = performance.now() / 1000;
+  if (document.body.dataset.editor !== "on" && now - lastSample >= SAMPLE_DT) {
+    lastSample = now;
+    history.push({ t: now, dr: deadReckoning.error(robot), kf: kalman.error(robot), sigma: kalman.sigma() });
+  }
+  while (history.length && history[0].t < now - HISTORY_S) history.shift();
+  while (marks.length && marks[0].t < now - HISTORY_S) marks.shift();
+
+  kfEls.error.textContent = kalman.error(robot).toFixed(2);
+  kfEls.heading.textContent = (kalman.headingError(robot) * 180 / Math.PI).toFixed(1);
+  kfEls.sigma.textContent = kalman.sigma().toFixed(2);
+  kfEls.lidar.textContent = kalman.use.lidar ? `${kalman.lidarStats.used} / ${kalman.lidarStats.rejected}` : "-";
+  const imu = robot.sensors.find(s => s.type === "imu");
+  if (imu) kfEls.bias.textContent = `${(kalman.gyroBias() * 180 / Math.PI).toFixed(2)} / ${(imu.bias.wz * 180 / Math.PI).toFixed(2)}`;
+  const rms = key => history.length ? Math.sqrt(history.reduce((t, h) => t + h[key] ** 2, 0) / history.length).toFixed(2) : "-";
+  kfEls.rmsDr.textContent = rms("dr");
+  kfEls.rmsKf.textContent = rms("kf");
+  drawChart(now);
+}
+
+function drawChart(now) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(chart.clientWidth * dpr), h = Math.round(chart.clientHeight * dpr);
+  if (chart.width !== w || chart.height !== h) { chart.width = w; chart.height = h; }
+  const c = chartCtx;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = chart.clientWidth, H = chart.clientHeight, pad = { l: 34, r: 6, t: 14, b: 16 };
+  c.clearRect(0, 0, W, H);
+
+  // y axis: a "nice" ceiling above the largest value shown
+  const peak = Math.max(0.5, ...history.map(p => Math.max(p.dr, p.kf, 2 * p.sigma)));
+  const step = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50].find(s => peak / s <= 5) ?? 100;
+  const top = Math.ceil(peak / step) * step;
+  const px = t => pad.l + (W - pad.l - pad.r) * (1 - (now - t) / HISTORY_S);
+  const py = v => H - pad.b - (H - pad.t - pad.b) * Math.min(v / top, 1);
+
+  c.font = "11px Arial, Helvetica, sans-serif";
+  c.lineWidth = 1;
+  c.strokeStyle = "#ddd";
+  c.fillStyle = "#555";
+  c.textAlign = "right";
+  c.textBaseline = "middle";
+  for (let v = 0; v <= top + 1e-9; v += step) {
+    c.beginPath();
+    c.moveTo(pad.l, py(v));
+    c.lineTo(W - pad.r, py(v));
+    c.stroke();
+    c.fillText(v.toFixed(step < 1 ? 1 : 0), pad.l - 4, py(v));
+  }
+  c.textAlign = "center";
+  c.textBaseline = "alphabetic";
+  c.fillText("-30 s", pad.l + 14, H - 3);
+  c.fillText("now", W - pad.r - 10, H - 3);
+
+  c.strokeStyle = "#999";
+  c.fillStyle = "#333";
+  c.textBaseline = "top";
+  for (const m of marks) {
+    c.beginPath();
+    c.moveTo(px(m.t), pad.t);
+    c.lineTo(px(m.t), H - pad.b);
+    c.stroke();
+    c.fillText(m.label, px(m.t), 1);
+  }
+
+  const line = (key, color, factor = 1, dash = []) => {
+    c.strokeStyle = color;
+    c.lineWidth = 1.5;
+    c.setLineDash(dash);
+    c.beginPath();
+    history.forEach((p, i) => i ? c.lineTo(px(p.t), py(p[key] * factor)) : c.moveTo(px(p.t), py(p[key] * factor)));
+    c.stroke();
+    c.setLineDash([]);
+  };
+  line("sigma", "rgba(0, 150, 90, 0.7)", 2, [4, 3]);
+  line("dr", "rgb(140, 60, 200)");
+  line("kf", "rgb(0, 150, 90)");
+}
 </script>
 
 <script type="module" src="src/main.js"></script>
