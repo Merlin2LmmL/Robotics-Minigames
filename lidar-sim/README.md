@@ -19,7 +19,7 @@ A browser-based simulation of a LiDAR-equipped robot. Drive it around, watch the
 - **Environment toggle:** hide all walls and obstacles and drive using only the lidar hits, just like the robot does.
 - **Maps**
   - **Maze:** a random maze with no loops.
-  - **Floorplan:** a (lovingly approximate) sketch of a school building.
+  - **Floorplan:** the ground floor of our school, traced from a photo of its floor plan (`assets/school-floorplan.jpg`), with 1.5 m doors and stairs you can drive over, and stored as a normal map file (`src/map/floorplan.json`), so it opens in the editor too.
   - **Warehouse:** rows of identical shelves, set by a seed. Pallets can be pushed, and workers walk the aisles (and politely wait when the robot is in their way).
   - **Sandbox:** your own map, built in the editor.
 - **Map editor:** rectangles, circles, walls, polygons, walking people, the robot's start position, an eraser, snap to grid and undo. The lidar keeps scanning while you edit, so you see what the robot would see.
@@ -75,6 +75,17 @@ Exported maps are plain JSON. Coordinates are in pixels; `scale` says how many p
 
 Supported shapes are `rectangle`, `circle`, `polygon` (`points`) and `line` (`x1`, `y1`, `x2`, `y2`).
 
+## Rebuilding the school floorplan
+
+The floorplan map is traced from a phone photo of the plan that hangs in the school, in two steps (needs `python3-opencv` and `python3-scipy`):
+
+```
+python3 tools/floorplan/rectify_photo.py photo.jpg assets/school-floorplan.jpg
+python3 tools/floorplan/trace_floorplan.py assets/school-floorplan.jpg src/map/floorplan.json debug.png
+```
+
+The first fits the lens distortion and the camera angle so the plan's walls come out straight, then crops to the sheet. The second turns the ground floor into straight walls of one thickness, pillars and the round bays beside the aula. Doors are found by the gap or the door leaf (arc) on the plan and widened to 1.5 m so the robot fits through like on a robotics course; stairs and door thresholds go into the floor layer, so they are drawn but can be driven over. `debug.png` shows what it found on top of the plan. The crop, the ground floor's position on the sheet and the scale (a classroom is taken as 9 m wide, because the scale bar has no length on it) are constants at the top of each script.
+
 ## Known limitations
 
 - Shapes with corners pointing inwards collide as if those corners were filled in.
@@ -96,6 +107,8 @@ src/sensors/gps.js    noisy absolute position fixes
 src/deadReckoning.js  pose estimate from gyro and wheels
 src/kalman.js         extended Kalman filter fusing all sensors
 src/map/              maps, obstacles, movers and the map file format
+assets/               straightened photo of the school floor plan
+tools/floorplan/      scripts that straighten the photo and trace it into src/map/floorplan.json
 ```
 
 ## License
