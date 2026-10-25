@@ -1,6 +1,7 @@
 import { robot, updateRobot, drawRobot, setRobotScale } from "./robot.js";
 import { deadReckoning } from "./deadReckoning.js";
 import { kalman } from "./kalman.js";
+import { slam } from "./slam/slam.js";
 import { buildMap, paramsFromQuery } from "./map/map.js";
 import { sandbox, DEFAULT_SCALE } from "./map/sandbox.js";
 import { editor } from "./editor.js";
@@ -16,6 +17,7 @@ let map = null;
 let mapKey = null;
 let mapSeed = null;
 let mapEditing = false;
+const slamDebug = new URLSearchParams(location.search).has("slam");
 
 // put the robot at the map's start and stop it
 function placeRobot(start) {
@@ -41,6 +43,7 @@ function loadMap(key) {
   for (const s of robot.sensors) s.reset?.();
   deadReckoning.reset(map.start);
   kalman.reset(map.start, robot.scale);
+  slam.reset(map.start, robot.scale);
 }
 
 function initialize() {
@@ -89,6 +92,7 @@ function update(timestamp) {
     updateRobot(robot, dt, keys, map.obstacles);
     deadReckoning.step(robot, dt);
     kalman.step(robot, dt, map.obstacles);
+    slam.step(robot, dt);
   }
   mapEditing = editing;
 
@@ -131,6 +135,8 @@ function update(timestamp) {
   }
   if (!editing && document.body.dataset.deadReckoning === "on") deadReckoning.draw(ctx, robot);
   if (!editing && document.body.dataset.kalman === "on") kalman.draw(ctx, robot);
+  // debug view of the SLAM back end, switched on with ?slam in the URL until it gets its own UI
+  if (!editing && slamDebug) slam.draw(ctx, robot);
   if (editing) editor.draw(ctx);
 
   requestAnimationFrame(update);

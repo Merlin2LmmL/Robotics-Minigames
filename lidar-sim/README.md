@@ -15,6 +15,7 @@ A browser-based simulation of a LiDAR-equipped robot. Drive it around, watch the
 - **GPS:** an absolute position fix twice a second. It never drifts, but every fix is about a meter off.
 - **Dead reckoning:** a purple outline shows where the robot *thinks* it is using only the gyro and wheels. Like a real robot it first averages the gyro for 2 s while standing still and subtracts that bias, but it still drifts. That's the point.
 - **Sensor fusion with an extended Kalman filter:** a green outline fuses gyro, accelerometer, wheel odometry, lidar and GPS into one estimate, with a 95% uncertainty ellipse around it. The lidar is matched against the map: each beam's range is compared with what the map predicts from the estimated pose, and beams that hit people or pushed pallets are rejected as outliers. Switch any sensor on or off and watch the live error chart, or scramble the estimate and watch it recover. The filter also learns the gyro's bias.
+- **SLAM back end** (`src/slam/`): builds the robot's path from its own sensors, without the map. Keyframes every 0.5 m, linked by scan matching (point-to-line ICP), loop closures when the robot comes back to a place it has seen, and a pose graph optimized with Gauss-Newton. Loop closures that look ambiguous are rejected and a robust kernel down-weights wrong ones. Add `?slam` to the URL to see its debug view: keyframe points, the graph and its loop closures. Drawing an actual map from it is still to do.
 - **Two camera modes:** *World* keeps the map still; *Robot* keeps the robot still and turns the world around it.
 - **Environment toggle:** hide all walls and obstacles and drive using only the lidar hits, just like the robot does.
 - **Maps**
@@ -22,7 +23,7 @@ A browser-based simulation of a LiDAR-equipped robot. Drive it around, watch the
   - **Floorplan:** the ground floor of our school, traced from a photo of its floor plan (`assets/school-floorplan.jpg`), with 1.5 m doors and stairs you can drive over, and stored as a normal map file (`src/map/floorplan.json`), so it opens in the editor too.
   - **Warehouse:** rows of identical shelves, set by a seed. Pallets can be pushed, and workers walk the aisles (and politely wait when the robot is in their way).
   - **Sandbox:** your own map, built in the editor.
-- **Map editor:** rectangles, circles, walls, polygons, walking people, the robot's start position, an eraser, snap to grid and undo. The lidar keeps scanning while you edit, so you see what the robot would see.
+- **Map editor:** rectangles, circles, walls, polygons (pushable ones turn when hit off-center), walking people, the robot's start position, an eraser, snap to grid and undo. The lidar keeps scanning while you edit, so you see what the robot would see.
 - **Import and export** maps as `.json` files to share them. Any built-in map can be copied into the editor as a starting point.
 
 ## Controls
@@ -89,9 +90,9 @@ The first fits the lens distortion and the camera angle so the plan's walls come
 ## Known limitations
 
 - Shapes with corners pointing inwards collide as if those corners were filled in.
-- Only rectangles and circles can be pushed.
+- Lines can't be pushed, and pushed rectangles and circles slide without turning (only polygons turn).
 - The sandbox autosave lives in your browser only, so export your map if you want to keep or share it.
-- No SLAM yet. The Kalman filter localizes against a map it is given (every wall that neither walks nor can be pushed), so it can't build one itself. That's next.
+- The Kalman filter localizes against a map it is given (every wall that neither walks nor can be pushed). SLAM doesn't need one, but it doesn't draw a map yet either, and in open spaces where the lidar sees few walls it drifts like odometry.
 - Without the gyro, lidar matching in the warehouse can lock onto the wrong aisle, because they all look the same. A Kalman filter only tracks one guess.
 
 ## Project structure
@@ -106,6 +107,7 @@ src/sensors/imu.js    IMU and wheel odometry
 src/sensors/gps.js    noisy absolute position fixes
 src/deadReckoning.js  pose estimate from gyro and wheels
 src/kalman.js         extended Kalman filter fusing all sensors
+src/slam/             SLAM back end: scan matching, pose graph, loop closure
 src/map/              maps, obstacles, movers and the map file format
 assets/               straightened photo of the school floor plan
 tools/floorplan/      scripts that straighten the photo and trace it into src/map/floorplan.json

@@ -185,7 +185,7 @@ export function updateRobot(robot, dt, keys, obstacles = []) {
       hit = true;
 
       // a movable obstacle gets pushed away instead, unless something static blocks it
-      if (o.movable && o.tryMove(-c.nx * c.depth, -c.ny * c.depth, obstacles)) {
+      if (o.movable && o.push(c, robot, obstacles)) {
         const hn = Math.cos(robot.angle) * c.nx + Math.sin(robot.angle) * c.ny;
         // pushing caps the robot's speed instead of stalling it
         if (robot.speed * hn < 0) {
