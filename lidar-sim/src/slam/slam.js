@@ -1,34 +1,23 @@
-// Graph SLAM back end: builds a consistent trajectory from the robot's own sensors, without
-// the map. It never looks at map.obstacles or the robot's true pose (except `truth`, kept
-// only so the result can be graded).
+// Graph SLAM back end: works out the robot's path from its own sensors, without the map.
+// It never looks at map.obstacles or the robot's true pose (`truth` is only kept for grading).
 //
-// 1. Odometry (gyro + wheels, like dead reckoning) says roughly how the robot moved.
-// 2. Every KEY_DIST of driving the lidar scans collected since the last time become a
-//    keyframe: a node in the pose graph plus the rays it saw.
-// 3. Scan matching lines the new keyframe up with the last few, which corrects most of the
+// How it works:
+// 1. Odometry (gyro + wheels, same as dead reckoning) says roughly how the robot moved.
+// 2. Every KEY_DIST of driving, the lidar scans since the last keyframe become a new one:
+//    a node in the pose graph plus the rays it saw.
+// 3. Scan matching lines the new keyframe up with the last few. That fixes most of the
 //    odometry error and becomes the edge to the previous node.
-// 4. Loop closure: when the robot is back near an old keyframe, its scan is matched against
-//    the old one too. If they fit well, that edge goes into the graph and the whole graph is
-//    optimized, pulling the drifted path back into shape.
+// 4. Loop closure: back near an old keyframe, the scan gets matched against that one too.
+//    If it fits well the edge goes into the graph, the graph is optimized and the drifted
+//    path snaps back into shape.
 //
-// ---- For the front end (the map) ----
-// Everything is in meters, in the frame the robot started in (the same frame as the world,
-// since it starts at the map's start pose). Use slam.scale to get world px.
-//   slam.keyframes[k]  { pose, rays, points, truth }
-//     pose    current best estimate of the keyframe's pose { x, y, th }. It changes whenever
-//             the graph is optimized, so don't copy it, read it when drawing.
-//     rays    every ray kept for the keyframe, in the keyframe's own frame:
-//             { ox, oy, x, y, hit }. (ox, oy) is where the lidar was, (x, y) where the ray
-//             ended, hit = false means it reached max range without hitting anything.
-//             For an occupancy grid: cells along the ray are free, the end cell is occupied if hit.
-//     points  the hits, thinned out, used for matching
-//   slam.toWorld(kf, p)   a point from kf.rays / kf.points into the world frame
-//   slam.revision         goes up whenever poses changed after the fact (a loop was closed):
-//                         time to rebuild the map from scratch. New keyframes alone don't
-//                         change it, they can just be added to an existing map.
-//   slam.pose()           where the robot is now, in world px { x, y, angle }
-//   slam.loops            accepted loop closures [{ from, to }] (keyframe indices)
-//   slam.stats            numbers for the side panel
+// Everything in here is in meters, in the frame the robot started in (= the world frame,
+// since it starts at the map's start pose). The map itself is drawn by occupancyGrid.js from:
+//   keyframes[k].pose  best guess of the keyframe's pose { x, y, th }; changes when the graph
+//                      is optimized, so read it when needed instead of copying it
+//   keyframes[k].rays  the rays it saw, in its own frame: { ox, oy, x, y, hit }
+//   toWorld(kf, p)     a point from those rays into the world frame
+//   revision           goes up whenever old poses moved (a loop closed): rebuild the map
 
 import { createDeadReckoning } from "../deadReckoning.js";
 import { PoseGraph, compose, between, transformPoint, diagInfo, addMat } from "./poseGraph.js";
@@ -137,7 +126,7 @@ export const slam = {
         if (!lidar || this.odom.calibrating()) return;
         const o = this.odomPose();
 
-        if (!this.window) this.window = { odom: o, truth: this.truthOf(robot), rays: [], scans: 0, timer: SCAN_DT };
+        if (!this.window) this.window = this.newWindow(o, robot);
         const w = this.window, rel = between(w.odom, o);
 
         w.timer += dt;
@@ -155,11 +144,15 @@ export const slam = {
         if (Math.hypot(rel.x, rel.y) >= KEY_DIST || Math.abs(rel.th) >= KEY_TURN) {
             this.driven += Math.hypot(rel.x, rel.y);
             this.addKeyframe(w);
-            this.window = { odom: o, truth: this.truthOf(robot), rays: [], scans: 0, timer: SCAN_DT };
+            this.window = this.newWindow(o, robot);
         }
     },
 
-    truthOf(robot) { return { x: robot.x / this.scale, y: robot.y / this.scale, th: robot.angle }; },
+    // the scans of the next keyframe get collected in here, starting at odometry pose o
+    newWindow(o, robot) {
+        const truth = { x: robot.x / this.scale, y: robot.y / this.scale, th: robot.angle };
+        return { odom: o, truth, rays: [], scans: 0, timer: SCAN_DT };
+    },
 
     addKeyframe(w) {
         const points = thin(w.rays.filter(r => r.hit).map(r => ({ x: r.x, y: r.y })));
@@ -279,40 +272,59 @@ export const slam = {
         return this.keyframes.reduce((t, kf) => t + Math.hypot(kf.pose.x - kf.truth.x, kf.pose.y - kf.truth.y), 0) / this.keyframes.length;
     },
 
-    // Debug view of the back end: keyframe points, the graph and its loop closures.
-    // The real map drawing is the front end's job.
-    draw(ctx, robot) {
+    // how far the current estimate is from the truth (m)
+    poseError(robot) {
+        const p = this.pose();
+        return Math.hypot(p.x - robot.x, p.y - robot.y) / this.scale;
+    },
+
+    // layers: which parts to draw, { estimate, graph, points } (see mapping.layers)
+    draw(ctx, robot, layers) {
         const sc = this.scale, lw = robot.scale / 40;
         ctx.save();
-        ctx.fillStyle = COLOR_POINT;
-        for (const kf of this.keyframes)
-            for (const p of kf.points) {
-                const q = transformPoint(kf.pose, p);
-                ctx.fillRect(q.x * sc - lw, q.y * sc - lw, 2 * lw, 2 * lw);
+
+        if (layers.points) {
+            ctx.fillStyle = COLOR_POINT;
+            for (const kf of this.keyframes)
+                for (const p of kf.points) {
+                    const q = transformPoint(kf.pose, p);
+                    ctx.fillRect(q.x * sc - lw, q.y * sc - lw, 2 * lw, 2 * lw);
+                }
+        }
+
+        if (layers.graph) {
+            ctx.lineWidth = lw;
+            for (const edge of this.graph.edges) {
+                const a = this.graph.nodes[edge.i], b = this.graph.nodes[edge.j];
+                // loop closures fade out when the robust kernel stops trusting them
+                ctx.strokeStyle = edge.robust ? COLOR_LOOP : COLOR_EDGE;
+                ctx.globalAlpha = edge.robust ? 0.2 + 0.8 * edge.weight : 1;
+                ctx.beginPath();
+                ctx.moveTo(a.x * sc, a.y * sc);
+                ctx.lineTo(b.x * sc, b.y * sc);
+                ctx.stroke();
             }
-        ctx.lineWidth = lw;
-        for (const ed of this.graph.edges) {
-            const a = this.graph.nodes[ed.i], b = this.graph.nodes[ed.j];
-            ctx.strokeStyle = ed.robust ? COLOR_LOOP : COLOR_EDGE;
-            ctx.globalAlpha = ed.robust ? 0.2 + 0.8 * ed.weight : 1;
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = COLOR_NODE;
+            for (const n of this.graph.nodes) {
+                ctx.beginPath();
+                ctx.arc(n.x * sc, n.y * sc, 2.5 * lw, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        if (layers.estimate) {
+            const p = this.pose();
+            ctx.strokeStyle = COLOR_NODE;
+            ctx.lineWidth = 1.5 * lw;
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.angle);
+            ctx.strokeRect(-robot.width / 2, -robot.height / 2, robot.width, robot.height);
             ctx.beginPath();
-            ctx.moveTo(a.x * sc, a.y * sc);
-            ctx.lineTo(b.x * sc, b.y * sc);
+            ctx.moveTo(0, 0);
+            ctx.lineTo(robot.width / 2, 0);
             ctx.stroke();
         }
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = COLOR_NODE;
-        for (const n of this.graph.nodes) {
-            ctx.beginPath();
-            ctx.arc(n.x * sc, n.y * sc, 2.5 * lw, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        const p = this.pose();
-        ctx.strokeStyle = COLOR_NODE;
-        ctx.lineWidth = 1.5 * lw;
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.angle);
-        ctx.strokeRect(-robot.width / 2, -robot.height / 2, robot.width, robot.height);
         ctx.restore();
     },
 };

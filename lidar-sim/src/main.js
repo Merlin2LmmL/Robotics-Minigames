@@ -2,6 +2,7 @@ import { robot, updateRobot, drawRobot, setRobotScale } from "./robot.js";
 import { deadReckoning } from "./deadReckoning.js";
 import { kalman } from "./kalman.js";
 import { slam } from "./slam/slam.js";
+import { mapping } from "./slam/occupancyGrid.js";
 import { buildMap, paramsFromQuery } from "./map/map.js";
 import { sandbox, DEFAULT_SCALE } from "./map/sandbox.js";
 import { editor } from "./editor.js";
@@ -17,7 +18,6 @@ let map = null;
 let mapKey = null;
 let mapSeed = null;
 let mapEditing = false;
-const slamDebug = new URLSearchParams(location.search).has("slam");
 
 // put the robot at the map's start and stop it
 function placeRobot(start) {
@@ -93,6 +93,7 @@ function update(timestamp) {
     deadReckoning.step(robot, dt);
     kalman.step(robot, dt, map.obstacles);
     slam.step(robot, dt);
+    mapping.update(slam);
   }
   mapEditing = editing;
 
@@ -100,8 +101,12 @@ function update(timestamp) {
   const zoom = parseFloat(document.body.dataset.zoom) || 1;
   const s = Math.min(canvas.width / WORLD_W, canvas.height / WORLD_H) * zoom;
 
+  const showEnvironment = editing || document.body.dataset.environment === "on";
+  const showSlam = !editing && document.body.dataset.slam === "on";
+
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#f0f0f0";
+  // with only the SLAM map to look at, a darker background makes the mapped floor stand out
+  ctx.fillStyle = showSlam && mapping.layers.map && !showEnvironment ? "#c8c8c8" : "#f0f0f0";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (editing) {
@@ -122,7 +127,8 @@ function update(timestamp) {
     ctx.setTransform(s, 0, 0, s, canvas.width / 2 - cx * s, canvas.height / 2 - cy * s);
   }
   editor.view = ctx.getTransform();
-  const showEnvironment = editing || document.body.dataset.environment === "on";
+  // the SLAM map goes underneath everything, so the real walls cover it where it got them right
+  if (showSlam) mapping.draw(ctx, slam.scale);
   if (showEnvironment) {
     // cosmetic floor markings: under the robot, never collided with
     (map.floor ?? []).forEach(o => o.draw(ctx, scrollX, scrollY));
@@ -135,8 +141,7 @@ function update(timestamp) {
   }
   if (!editing && document.body.dataset.deadReckoning === "on") deadReckoning.draw(ctx, robot);
   if (!editing && document.body.dataset.kalman === "on") kalman.draw(ctx, robot);
-  // debug view of the SLAM back end, switched on with ?slam in the URL until it gets its own UI
-  if (!editing && slamDebug) slam.draw(ctx, robot);
+  if (showSlam) slam.draw(ctx, robot, mapping.layers);
   if (editing) editor.draw(ctx);
 
   requestAnimationFrame(update);

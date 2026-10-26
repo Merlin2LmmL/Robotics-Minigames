@@ -161,6 +161,10 @@
   .legend span { display: inline-block; margin-right: 14px; }
   .swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 4px; }
 
+  /* mapping */
+  #slam-resolution { font: inherit; padding: 2px; }
+  #slam-opacity { vertical-align: middle; width: 7em; }
+
   footer {
     position: fixed;
     right: 8px;
@@ -348,10 +352,47 @@
       <div class="legend">
         <span><i class="swatch" style="background: rgb(140, 60, 200)"></i>Dead reckoning <b id="rms-dr">-</b></span>
         <span><i class="swatch" style="background: rgb(0, 150, 90)"></i>Kalman filter <b id="rms-kf">-</b></span>
+        <span><i class="swatch" style="background: rgb(220, 120, 0)"></i>SLAM <b id="rms-slam">-</b></span>
         <span><i class="swatch" style="background: repeating-linear-gradient(90deg, rgb(0, 150, 90) 0 4px, transparent 4px 7px)"></i>Filter's 2σ guess</span>
       </div>
       <p class="hint">Position error over the last 30 s, with the RMS error in meters. Vertical lines mark sensor switches.</p>
       <p class="hint">An extended Kalman filter predicts the motion from the accelerometer, then corrects it with each measurement in proportion to how much it trusts it. The gyro and wheels alone still drift, just slower than dead reckoning. The lidar compares every few beams with the distance the map predicts from the estimated pose and pulls the estimate back to where the walls fit; beams that hit people or pallets don't fit and are rejected. GPS never drifts but jumps around by a meter; fused with the rest it stops jumping. The green ellipse is where the filter is 95% sure the robot is. Scramble throws the estimate off to watch it recover.</p>
+    </section>
+
+    <section class="card">
+      <h2>Mapping (SLAM)</h2>
+      <div class="row buttons">
+        <button id="slam-btn" type="button">SLAM: On</button>
+        <button id="slam-reset" type="button">Start a new map</button>
+        <button id="slam-save" type="button">Save map as PNG</button>
+      </div>
+      <div class="row sensors" role="group" aria-label="What to draw">
+        <label><input type="checkbox" data-slam-layer="map"> Map</label>
+        <label><input type="checkbox" data-slam-layer="estimate"> Pose estimate</label>
+        <label><input type="checkbox" data-slam-layer="graph"> Pose graph</label>
+        <label><input type="checkbox" data-slam-layer="points"> Scan points</label>
+      </div>
+      <div class="row buttons">
+        <label>Cell size
+          <select id="slam-resolution">
+            <option value="0.025">2.5 cm</option>
+            <option value="0.05" selected>5 cm</option>
+            <option value="0.1">10 cm</option>
+            <option value="0.2">20 cm</option>
+          </select>
+        </label>
+        <label>Opacity <input id="slam-opacity" type="range" min="0.2" max="1" step="0.05" value="1"></label>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="slam-keyframes">-</b><span>keyframes</span></div>
+        <div class="stat"><b id="slam-loops">-</b><span>loops closed / rejected</span></div>
+        <div class="stat"><b id="slam-area">-</b><span>area mapped (m²)</span></div>
+        <div class="stat"><b id="slam-error">-</b><span>estimate is off by (m)</span></div>
+        <div class="stat"><b id="slam-path-error">-</b><span>path is off by, average (m)</span></div>
+        <div class="stat"><b id="slam-optimize">-</b><span>last optimization (ms)</span></div>
+      </div>
+      <p class="hint" id="slam-status" aria-live="polite"></p>
+      <p class="hint">The robot draws its own map from the lidar, without knowing the real one: white is floor it has seen, dark is wall, gray is unexplored. Turn the environment off to see only what it knows. Its position comes from odometry corrected by scan matching, and when it comes back to a place it has been before, the loop is closed and the whole path (and the map with it) gets pulled straight. Drive a big loop and watch it snap. The pose graph shows the keyframes in orange and the loop closures in pink; the orange outline is where SLAM thinks the robot is. The map starts after 2 s of standing still, while the gyro calibrates.</p>
     </section>
 
   </aside>
@@ -387,26 +428,42 @@
 })();
 </script>
 
-<!-- ===================== UI: VIEW TOGGLE + LIDAR LOG ===================== -->
+<!-- ===================== UI ===================== -->
 <script type="module">
 import { robot } from "./src/robot.js";
 import { deadReckoning } from "./src/deadReckoning.js";
 import { kalman } from "./src/kalman.js";
+import { slam } from "./src/slam/slam.js";
+import { mapping } from "./src/slam/occupancyGrid.js";
 import { environments } from "./src/map/map.js";
-// main.js reads document.body.dataset.view to pick the camera
-const viewBtn = document.getElementById("view-btn");
-document.body.dataset.view = "robot";
-viewBtn.addEventListener("click", () => {
-  const robotView = document.body.dataset.view !== "robot";
-  document.body.dataset.view = robotView ? "robot" : "world";
-  viewBtn.textContent = robotView ? "View: Robot" : "View: World";
-});
+
+const $ = id => document.getElementById(id);
+
+// Most switches are a button that flips document.body.dataset[key] between two values,
+// which main.js reads every frame. The first value is the default.
+function toggleButton(id, key, label, [a, b] = ["on", "off"]) {
+  const btn = $(id);
+  const show = () => {
+    const v = document.body.dataset[key];
+    btn.textContent = `${label}: ${v[0].toUpperCase()}${v.slice(1)}`;
+  };
+  document.body.dataset[key] = a;
+  show();
+  btn.addEventListener("click", () => {
+    document.body.dataset[key] = document.body.dataset[key] === a ? b : a;
+    show();
+  });
+}
+
+const here = () => ({ x: robot.x, y: robot.y, angle: robot.angle });
+
+toggleButton("view-btn", "view", "View", ["robot", "world"]);
 
 // main.js reads document.body.dataset.map and reloads the robot when it changes
-const mapSelect = document.getElementById("map-select");
-const mapDesc = document.getElementById("map-desc");
-const seedRow = document.getElementById("seed-row");
-const seedInput = document.getElementById("seed-input");
+const mapSelect = $("map-select");
+const mapDesc = $("map-desc");
+const seedRow = $("seed-row");
+const seedInput = $("seed-input");
 document.body.dataset.seed = seedInput.value;
 seedInput.addEventListener("input", () => {
   document.body.dataset.seed = String(Math.max(0, parseInt(seedInput.value, 10) || 0));
@@ -427,27 +484,20 @@ syncMapUi();
 
 // main.js reads document.body.dataset.zoom as a camera scale multiplier
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4, ZOOM_STEP = 1.25;
-const zoomReset = document.getElementById("zoom-reset");
+const zoomReset = $("zoom-reset");
 function setZoom(z) {
   z = Math.min(Math.max(z, ZOOM_MIN), ZOOM_MAX);
   document.body.dataset.zoom = String(z);
   zoomReset.textContent = Math.round(z * 100) + "%";
 }
 setZoom(1);
-document.getElementById("zoom-in").addEventListener("click",
+$("zoom-in").addEventListener("click",
   () => setZoom(parseFloat(document.body.dataset.zoom) * ZOOM_STEP));
-document.getElementById("zoom-out").addEventListener("click",
+$("zoom-out").addEventListener("click",
   () => setZoom(parseFloat(document.body.dataset.zoom) / ZOOM_STEP));
 zoomReset.addEventListener("click", () => setZoom(1));
 
-// main.js reads document.body.dataset.environment to decide whether to draw the map
-const environmentBtn = document.getElementById("environment-btn");
-document.body.dataset.environment = "on";
-environmentBtn.addEventListener("click", () => {
-  const on = document.body.dataset.environment === "off";
-  document.body.dataset.environment = on ? "on" : "off";
-  environmentBtn.textContent = on ? "Environment: On" : "Environment: Off";
-});
+toggleButton("environment-btn", "environment", "Environment");
 
 // on-screen WASD pad: fire the same key events main.js already listens for
 for (const btn of document.querySelectorAll(".pad button")) {
@@ -462,30 +512,22 @@ for (const btn of document.querySelectorAll(".pad button")) {
   btn.addEventListener("contextmenu", e => e.preventDefault());
 }
 
-// main.js reads document.body.dataset.deadReckoning to decide whether to draw the estimate
-const drBtn = document.getElementById("dr-btn");
-document.body.dataset.deadReckoning = "on";
-drBtn.addEventListener("click", () => {
-  const on = document.body.dataset.deadReckoning === "off";
-  document.body.dataset.deadReckoning = on ? "on" : "off";
-  drBtn.textContent = on ? "Dead reckoning: On" : "Dead reckoning: Off";
-});
-document.getElementById("dr-reset").addEventListener("click",
-  () => deadReckoning.reset({ x: robot.x, y: robot.y, angle: robot.angle }));
+toggleButton("dr-btn", "deadReckoning", "Dead reckoning");
+$("dr-reset").addEventListener("click", () => deadReckoning.reset(here()));
 
 const imuEls = {
-  ax: document.getElementById("imu-ax"),
-  ay: document.getElementById("imu-ay"),
-  wz: document.getElementById("imu-wz"),
-  v: document.getElementById("odo-v"),
-  error: document.getElementById("dr-error"),
+  ax: $("imu-ax"),
+  ay: $("imu-ay"),
+  wz: $("imu-wz"),
+  v: $("odo-v"),
+  error: $("dr-error"),
 };
 
 const lidarEls = {
-  hits: document.getElementById("lidar-hits"),
-  nearest: document.getElementById("lidar-nearest"),
-  range: document.getElementById("lidar-range"),
-  list: document.getElementById("lidar-readings"),
+  hits: $("lidar-hits"),
+  nearest: $("lidar-nearest"),
+  range: $("lidar-range"),
+  list: $("lidar-readings"),
 };
 
 function updateLidarPanel() {
@@ -513,22 +555,60 @@ function updateLidarPanel() {
   }
   if (odo) imuEls.v.textContent = odo.reading.v.toFixed(2);
   imuEls.error.textContent = deadReckoning.error(robot).toFixed(2);
-  updateFusionPanel();
-  requestAnimationFrame(updateLidarPanel);
 }
-requestAnimationFrame(updateLidarPanel);
 
-// main.js reads document.body.dataset.kalman to decide whether to draw the fused estimate
-const kfBtn = document.getElementById("kf-btn");
-document.body.dataset.kalman = "on";
-kfBtn.addEventListener("click", () => {
-  const on = document.body.dataset.kalman === "off";
-  document.body.dataset.kalman = on ? "on" : "off";
-  kfBtn.textContent = on ? "Kalman filter: On" : "Kalman filter: Off";
+function updatePanels() {
+  updateLidarPanel();
+  updateFusionPanel();
+  updateSlamPanel();
+  requestAnimationFrame(updatePanels);
+}
+requestAnimationFrame(updatePanels);
+
+toggleButton("kf-btn", "kalman", "Kalman filter");
+$("kf-reset").addEventListener("click", () => kalman.reset(here(), robot.scale));
+$("kf-scramble").addEventListener("click", () => kalman.scramble());
+
+toggleButton("slam-btn", "slam", "SLAM");
+$("slam-reset").addEventListener("click", () => slam.reset(here(), robot.scale));
+for (const box of document.querySelectorAll("[data-slam-layer]")) {
+  box.checked = mapping.layers[box.dataset.slamLayer];
+  box.addEventListener("change", () => { mapping.layers[box.dataset.slamLayer] = box.checked; });
+}
+$("slam-resolution").addEventListener("change", e => mapping.setCellSize(parseFloat(e.target.value)));
+$("slam-opacity").addEventListener("input", e => { mapping.opacity = parseFloat(e.target.value); });
+$("slam-save").addEventListener("click", () => {
+  const canvas = mapping.grid.toCanvas();
+  if (!canvas) return;
+  const link = document.createElement("a");
+  link.download = `slam-map-${document.body.dataset.map}.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
 });
-document.getElementById("kf-reset").addEventListener("click",
-  () => kalman.reset({ x: robot.x, y: robot.y, angle: robot.angle }, robot.scale));
-document.getElementById("kf-scramble").addEventListener("click", () => kalman.scramble());
+
+const slamEls = {
+  keyframes: $("slam-keyframes"),
+  loops: $("slam-loops"),
+  area: $("slam-area"),
+  error: $("slam-error"),
+  pathError: $("slam-path-error"),
+  optimize: $("slam-optimize"),
+  status: $("slam-status"),
+};
+
+function updateSlamPanel() {
+  const st = slam.stats;
+  slamEls.keyframes.textContent = st.keyframes;
+  slamEls.loops.textContent = `${st.loops} / ${st.rejected}`;
+  slamEls.area.textContent = mapping.grid.area().toFixed(0);
+  slamEls.error.textContent = slam.poseError(robot).toFixed(2);
+  slamEls.pathError.textContent = slam.error().toFixed(2);
+  slamEls.optimize.textContent = st.optimizations ? st.lastOptimizeMs.toFixed(1) : "-";
+  let status = "";
+  if (slam.odom?.calibrating()) status = "Calibrating the gyro, stand still for a moment.";
+  else if (mapping.rebuilding()) status = "A loop was closed, redrawing the map...";
+  slamEls.status.textContent = status;
+}
 
 // error history for the chart: a sample every SAMPLE_DT, plus a marker per sensor switch
 const SAMPLE_DT = 0.1, HISTORY_S = 30;
@@ -543,15 +623,16 @@ for (const box of document.querySelectorAll("[data-sensor]")) {
 }
 
 const kfEls = {
-  error: document.getElementById("kf-error"),
-  heading: document.getElementById("kf-heading"),
-  sigma: document.getElementById("kf-sigma"),
-  lidar: document.getElementById("kf-lidar"),
-  bias: document.getElementById("kf-bias"),
-  rmsDr: document.getElementById("rms-dr"),
-  rmsKf: document.getElementById("rms-kf"),
+  error: $("kf-error"),
+  heading: $("kf-heading"),
+  sigma: $("kf-sigma"),
+  lidar: $("kf-lidar"),
+  bias: $("kf-bias"),
+  rmsDr: $("rms-dr"),
+  rmsKf: $("rms-kf"),
+  rmsSlam: $("rms-slam"),
 };
-const chart = document.getElementById("error-chart");
+const chart = $("error-chart");
 const chartCtx = chart.getContext("2d");
 let lastSample = 0;
 
@@ -559,7 +640,7 @@ function updateFusionPanel() {
   const now = performance.now() / 1000;
   if (document.body.dataset.editor !== "on" && now - lastSample >= SAMPLE_DT) {
     lastSample = now;
-    history.push({ t: now, dr: deadReckoning.error(robot), kf: kalman.error(robot), sigma: kalman.sigma() });
+    history.push({ t: now, dr: deadReckoning.error(robot), kf: kalman.error(robot), slam: slam.poseError(robot), sigma: kalman.sigma() });
   }
   while (history.length && history[0].t < now - HISTORY_S) history.shift();
   while (marks.length && marks[0].t < now - HISTORY_S) marks.shift();
@@ -573,6 +654,7 @@ function updateFusionPanel() {
   const rms = key => history.length ? Math.sqrt(history.reduce((t, h) => t + h[key] ** 2, 0) / history.length).toFixed(2) : "-";
   kfEls.rmsDr.textContent = rms("dr");
   kfEls.rmsKf.textContent = rms("kf");
+  kfEls.rmsSlam.textContent = rms("slam");
   drawChart(now);
 }
 
@@ -586,7 +668,7 @@ function drawChart(now) {
   c.clearRect(0, 0, W, H);
 
   // y axis: a "nice" ceiling above the largest value shown
-  const peak = Math.max(0.5, ...history.map(p => Math.max(p.dr, p.kf, 2 * p.sigma)));
+  const peak = Math.max(0.5, ...history.map(p => Math.max(p.dr, p.kf, p.slam, 2 * p.sigma)));
   const step = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50].find(s => peak / s <= 5) ?? 100;
   const top = Math.ceil(peak / step) * step;
   const px = t => pad.l + (W - pad.l - pad.r) * (1 - (now - t) / HISTORY_S);
@@ -633,6 +715,7 @@ function drawChart(now) {
   line("sigma", "rgba(0, 150, 90, 0.7)", 2, [4, 3]);
   line("dr", "rgb(140, 60, 200)");
   line("kf", "rgb(0, 150, 90)");
+  line("slam", "rgb(220, 120, 0)");
 }
 </script>
 

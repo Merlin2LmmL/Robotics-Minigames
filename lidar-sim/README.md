@@ -15,7 +15,8 @@ A browser-based simulation of a LiDAR-equipped robot. Drive it around, watch the
 - **GPS:** an absolute position fix twice a second. It never drifts, but every fix is about a meter off.
 - **Dead reckoning:** a purple outline shows where the robot *thinks* it is using only the gyro and wheels. Like a real robot it first averages the gyro for 2 s while standing still and subtracts that bias, but it still drifts. That's the point.
 - **Sensor fusion with an extended Kalman filter:** a green outline fuses gyro, accelerometer, wheel odometry, lidar and GPS into one estimate, with a 95% uncertainty ellipse around it. The lidar is matched against the map: each beam's range is compared with what the map predicts from the estimated pose, and beams that hit people or pushed pallets are rejected as outliers. Switch any sensor on or off and watch the live error chart, or scramble the estimate and watch it recover. The filter also learns the gyro's bias.
-- **SLAM back end** (`src/slam/`): builds the robot's path from its own sensors, without the map. Keyframes every 0.5 m, linked by scan matching (point-to-line ICP), loop closures when the robot comes back to a place it has seen, and a pose graph optimized with Gauss-Newton. Loop closures that look ambiguous are rejected and a robust kernel down-weights wrong ones. Add `?slam` to the URL to see its debug view: keyframe points, the graph and its loop closures. Drawing an actual map from it is still to do.
+- **SLAM back end** (`src/slam/`): builds the robot's path from its own sensors, without the map. Keyframes every 0.5 m, linked by scan matching (point-to-line ICP), loop closures when the robot comes back to a place it has seen, and a pose graph optimized with Gauss-Newton. Loop closures that look ambiguous are rejected and a robust kernel down-weights wrong ones.
+- **Mapping:** an occupancy grid drawn from the SLAM keyframes. White is floor the robot has seen, dark is wall, gray is unexplored. After a loop closure the map is redrawn from the corrected path in the background. Turn the environment off to see only what the robot knows, switch on the pose graph or the scan points, change the cell size (2.5 to 20 cm) and save the map as a PNG. SLAM also shows up in the error chart.
 - **Two camera modes:** *World* keeps the map still; *Robot* keeps the robot still and turns the world around it.
 - **Environment toggle:** hide all walls and obstacles and drive using only the lidar hits, just like the robot does.
 - **Maps**
@@ -92,7 +93,7 @@ The first fits the lens distortion and the camera angle so the plan's walls come
 - Shapes with corners pointing inwards collide as if those corners were filled in.
 - Lines can't be pushed, and pushed rectangles and circles slide without turning (only polygons turn).
 - The sandbox autosave lives in your browser only, so export your map if you want to keep or share it.
-- The Kalman filter localizes against a map it is given (every wall that neither walks nor can be pushed). SLAM doesn't need one, but it doesn't draw a map yet either, and in open spaces where the lidar sees few walls it drifts like odometry.
+- The Kalman filter localizes against a map it is given (every wall that neither walks nor can be pushed). SLAM doesn't need one, but in open spaces where the lidar sees few walls it drifts like odometry, and in the warehouse the identical aisles make loop closures rare, so its map smears there.
 - Without the gyro, lidar matching in the warehouse can lock onto the wrong aisle, because they all look the same. A Kalman filter only tracks one guess.
 
 ## Project structure
@@ -107,7 +108,7 @@ src/sensors/imu.js    IMU and wheel odometry
 src/sensors/gps.js    noisy absolute position fixes
 src/deadReckoning.js  pose estimate from gyro and wheels
 src/kalman.js         extended Kalman filter fusing all sensors
-src/slam/             SLAM back end: scan matching, pose graph, loop closure
+src/slam/             SLAM: scan matching, pose graph, loop closure and the occupancy grid map
 src/map/              maps, obstacles, movers and the map file format
 assets/               straightened photo of the school floor plan
 tools/floorplan/      scripts that straighten the photo and trace it into src/map/floorplan.json
