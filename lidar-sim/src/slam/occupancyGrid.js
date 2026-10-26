@@ -147,7 +147,7 @@ export class OccupancyGrid {
 export const mapping = {
     cellSize: 0.05,  // m
     opacity: 1,
-    layers: { map: true, estimate: true, graph: false, points: false },
+    layers: { map: true, estimate: true, path: true, graph: false, points: false },
 
     grid: new OccupancyGrid(0.05),
     done: 0,         // keyframes already in the grid

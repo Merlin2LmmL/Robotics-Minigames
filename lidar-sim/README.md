@@ -35,6 +35,8 @@ A browser-based simulation of a LiDAR-equipped robot. Drive it around, watch the
 | On-screen pad | Same, for touch screens |
 | Mouse wheel (editor) | Zoom |
 | Right-drag (editor) | Pan |
+| `E` / `V` | Environment on/off / switch view |
+| `M` / `N` | SLAM map on/off / start a new map |
 | `Delete` / `Ctrl+Z` (editor) | Delete selection / undo |
 
 ## Running locally

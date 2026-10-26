@@ -296,6 +296,7 @@
         <button type="button" class="d" data-code="KeyD">D</button>
       </div>
       <p class="hint">Hold a button to drive. Keyboard WASD and arrow keys work too.</p>
+      <p class="hint">Shortcuts: E environment, V view, M SLAM map, N new map.</p>
     </section>
 
     <section class="card">
@@ -369,6 +370,7 @@
       <div class="row sensors" role="group" aria-label="What to draw">
         <label><input type="checkbox" data-slam-layer="map"> Map</label>
         <label><input type="checkbox" data-slam-layer="estimate"> Pose estimate</label>
+        <label><input type="checkbox" data-slam-layer="path"> Path</label>
         <label><input type="checkbox" data-slam-layer="graph"> Pose graph</label>
         <label><input type="checkbox" data-slam-layer="points"> Scan points</label>
       </div>
@@ -577,6 +579,20 @@ for (const box of document.querySelectorAll("[data-slam-layer]")) {
 }
 $("slam-resolution").addEventListener("change", e => mapping.setCellSize(parseFloat(e.target.value)));
 $("slam-opacity").addEventListener("input", e => { mapping.opacity = parseFloat(e.target.value); });
+// keyboard shortcuts just press the buttons, so labels and state stay in sync
+const shortcuts = {
+  KeyE: () => $("environment-btn").click(),
+  KeyV: () => $("view-btn").click(),
+  KeyM: () => document.querySelector('[data-slam-layer="map"]').click(),
+  KeyN: () => $("slam-reset").click(),
+};
+addEventListener("keydown", e => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest?.("input, select, textarea")) return; // typing a map name, not a shortcut
+  if (document.body.dataset.editor === "on") return;
+  shortcuts[e.code]?.();
+});
+
 $("slam-save").addEventListener("click", () => {
   const canvas = mapping.grid.toCanvas();
   if (!canvas) return;

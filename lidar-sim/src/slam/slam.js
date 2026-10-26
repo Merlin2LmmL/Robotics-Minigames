@@ -278,7 +278,7 @@ export const slam = {
         return Math.hypot(p.x - robot.x, p.y - robot.y) / this.scale;
     },
 
-    // layers: which parts to draw, { estimate, graph, points } (see mapping.layers)
+    // layers: which parts to draw, { estimate, path, graph, points } (see mapping.layers)
     draw(ctx, robot, layers) {
         const sc = this.scale, lw = robot.scale / 40;
         ctx.save();
@@ -290,6 +290,17 @@ export const slam = {
                     const q = transformPoint(kf.pose, p);
                     ctx.fillRect(q.x * sc - lw, q.y * sc - lw, 2 * lw, 2 * lw);
                 }
+        }
+
+        // the path through the keyframes, so you can watch it snap into place when a loop closes
+        if (layers.path && this.graph.nodes.length) {
+            const p = this.pose();
+            ctx.strokeStyle = COLOR_NODE;
+            ctx.lineWidth = 1.5 * lw;
+            ctx.beginPath();
+            this.graph.nodes.forEach((n, i) => i ? ctx.lineTo(n.x * sc, n.y * sc) : ctx.moveTo(n.x * sc, n.y * sc));
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
         }
 
         if (layers.graph) {
